@@ -4,6 +4,8 @@
 #include "position.hpp"
 
 #include <algorithm>
+#include <cstdint>
+#include <sys/types.h>
 #include <vector>
 
 MoveList ClessEngine::get_legal_moves() const {
@@ -51,13 +53,13 @@ void ClessEngine::undo_move() {
   pos.undo_move();
 }
 
-int ClessEngine::perft(int depth) {
+uint64_t ClessEngine::perft(int depth) {
   if (depth == 0) return 1;
 
   MoveList moves = get_legal_moves();
   if (depth == 1) return moves.count;
 
-  int nodes = 0;
+  uint64_t nodes = 0;
   for (int i = 0; i < moves.count; i++) {
     make_move(moves[i]);
     nodes += perft(depth - 1);

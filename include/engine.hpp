@@ -23,7 +23,7 @@ public:
 
   bool make_move(const Move &move);
   void undo_move();
-  int perft(int depth);
+  uint64_t perft(int depth);
   std::vector<std::pair<Move, int>> perft_divide(int depth);
 
 private:
