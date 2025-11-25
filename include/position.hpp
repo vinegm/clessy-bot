@@ -18,7 +18,7 @@ struct UndoInfo {
 
 class Position {
 public:
-  Position(const std::string &fen);
+  Position(const std::string &fen) { set_fen(fen); }
 
   PieceColor to_move{};
   uint64_t bitboards[12]{};   // [BitboardIndex]
@@ -30,6 +30,7 @@ public:
   int halfmove_clock{};
   int fullmove_counter{};
 
+  void set_fen(const std::string &fen);
   std::string get_fen() const;
   Piece get_piece_at(Square square);
   void make_move(const Move &move);

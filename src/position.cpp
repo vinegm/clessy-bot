@@ -4,7 +4,18 @@
 
 #include <sstream>
 
-Position::Position(const std::string &fen) : bitboards{}, lookup_table{} {
+void Position::set_fen(const std::string &fen) {
+  for (int i = 0; i < 12; i++) {
+    bitboards[i] = 0;
+  }
+  for (int i = 0; i < 64; i++) {
+    lookup_table[i] = 0;
+  }
+  occupancy[WHITE] = 0;
+  occupancy[BLACK] = 0;
+  occupancy[ANY] = 0;
+  undo_stack.clear();
+
   std::istringstream fen_stream(fen);
   std::string piece_placement, active_color, castling, en_passant, halfmove_str, fullmove_str;
 

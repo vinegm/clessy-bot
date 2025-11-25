@@ -3,7 +3,6 @@
 #include "chess_types.hpp"
 #include "position.hpp"
 
-#include <algorithm>
 #include <cstdint>
 #include <sys/types.h>
 #include <vector>
@@ -31,21 +30,9 @@ MoveList ClessEngine::get_legal_moves_from(Square square) const {
   return filtered_moves;
 };
 
-bool ClessEngine::validate_move(const Move &move) const {
-  if (!legal_cache_valid) {
-    legal_moves = generator.generate_legal_moves(pos);
-    legal_cache_valid = true;
-  }
-
-  return std::find(legal_moves.begin(), legal_moves.end(), move) != legal_moves.end();
-}
-
-bool ClessEngine::make_move(const Move &move) {
-  if (validate_moves && !validate_move(move)) return false;
-
+void ClessEngine::make_move(const Move &move) {
   legal_cache_valid = false;
   pos.make_move(move);
-  return true;
 }
 
 void ClessEngine::undo_move() {

@@ -8,7 +8,6 @@ struct ExpectedResult {
   std::string initial_fen = INITIAL_POSITION_FEN;
   std::optional<std::string> fen_after_move{};
 
-  bool result{};
   PieceColor next_turn{};
 
   Piece moving_piece{};
@@ -53,7 +52,7 @@ void check_positions(ClessEngine &board, const ExpectedResult &expected, bool af
   Piece piece_at_to = board.get_piece_at(expected.move.to);
   const char *context = after_move ? "after move" : "before move";
 
-  if (after_move && expected.result) {
+  if (after_move) {
     Piece empty_piece = {WHITE, PIECE_NONE};
     cr_assert_eq(
         piece_at_from,
@@ -86,7 +85,7 @@ void check_positions(ClessEngine &board, const ExpectedResult &expected, bool af
       && expected.piece_at_capture.has_value()) {
     Piece piece_at_capture = board.get_piece_at(expected.capture_square.value());
 
-    if (after_move && expected.result) {
+    if (after_move) {
       Piece empty_piece = {WHITE, PIECE_NONE};
       cr_assert_eq(
           piece_at_capture,
@@ -114,11 +113,11 @@ void check_positions(ClessEngine &board, const ExpectedResult &expected, bool af
  * @param expected
  */
 void check_case(ExpectedResult &expected) {
-  ClessEngine board(expected.initial_fen, true);
+  ClessEngine board(expected.initial_fen);
 
   check_positions(board, expected, false);
 
-  bool result = board.make_move(expected.move);
+  board.make_move(expected.move);
   if (expected.fen_after_move.has_value()) {
     cr_assert_eq(
         board.get_fen(),
@@ -126,11 +125,9 @@ void check_case(ExpectedResult &expected) {
         "FEN mismatch after making move"
     );
   }
-  cr_assert_eq(result, expected.result, "Move result mismatch");
   cr_assert_eq(board.to_move(), expected.next_turn, "Expected turn to switch correctly after move");
   check_positions(board, expected, true);
 
-  if (!expected.result) return;
   board.undo_move();
   cr_assert_neq(
       board.to_move(),
@@ -143,7 +140,6 @@ void check_case(ExpectedResult &expected) {
 
 Test(unique_moves, e4) {
   ExpectedResult expected = {
-      .result = true,
       .next_turn = BLACK,
       .moving_piece = {WHITE, PIECE_PAWN},
       .move = {E2, E4},
@@ -155,7 +151,6 @@ Test(unique_moves, e4) {
 Test(unique_moves, dxe6_en_passant) {
   ExpectedResult expected = {
       .initial_fen = "rnbqkbnr/ppp2ppp/8/3Pp3/8/8/PPPP1PPP/RNBQKBNR w KQkq e6 0 1",
-      .result = true,
       .next_turn = BLACK,
       .moving_piece = {WHITE, PIECE_PAWN},
       .piece_at_capture = std::make_optional<Piece>({BLACK, PIECE_PAWN}),
@@ -166,22 +161,9 @@ Test(unique_moves, dxe6_en_passant) {
   check_case(expected);
 }
 
-Test(unique_moves, dxe6_invalid_en_passant) {
-  ExpectedResult expected = {
-      .initial_fen = "rnbqkbnr/ppp2ppp/8/3Pp3/8/8/PPPP1PPP/RNBQKBNR w KQkq - 0 1",
-      .result = false,
-      .next_turn = WHITE,
-      .moving_piece = {WHITE, PIECE_PAWN},
-      .move = {D5, E6, EN_PASSANT},
-  };
-
-  check_case(expected);
-}
-
 Test(unique_moves, Kxe2) {
   ExpectedResult expected = {
       .initial_fen = "4k3/R7/8/8/8/8/4r3/4K3 w - - 0 1",
-      .result = true,
       .next_turn = BLACK,
       .moving_piece = {WHITE, PIECE_KING},
       .move = {E1, E2, CAPTURE},
@@ -189,32 +171,9 @@ Test(unique_moves, Kxe2) {
   check_case(expected);
 }
 
-Test(unique_moves, illegal_move_due_to_pin) {
-  ExpectedResult expected = {
-      .initial_fen = "4k3/8/8/8/7b/8/5R2/4K3 w - - 0 1",
-      .result = false,
-      .next_turn = WHITE,
-      .moving_piece = {WHITE, PIECE_ROOK},
-      .move = {F2, F8},
-  };
-  check_case(expected);
-}
-
-Test(unique_moves, king_moves_into_check) {
-  ExpectedResult expected = {
-      .initial_fen = "4k3/8/8/8/8/8/7r/4K3 w - - 0 1",
-      .result = false,
-      .next_turn = WHITE,
-      .moving_piece = {WHITE, PIECE_KING},
-      .move = {E1, E2},
-  };
-  check_case(expected);
-}
-
 Test(unique_moves, kingside_castle_white) {
   ExpectedResult expected = {
       .initial_fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQK2R w KQkq - 0 1",
-      .result = true,
       .next_turn = BLACK,
       .moving_piece = {WHITE, PIECE_KING},
       .move = {E1, G1, CASTLING},
@@ -226,43 +185,9 @@ Test(unique_moves, kingside_castle_white) {
 Test(unique_moves, queenside_castle_black) {
   ExpectedResult expected = {
       .initial_fen = "r3kbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1",
-      .result = true,
       .next_turn = WHITE,
       .moving_piece = {BLACK, PIECE_KING},
       .move = {E8, C8, CASTLING},
   };
-  check_case(expected);
-}
-
-Test(unique_moves, invalid_castle_through_check) {
-  ExpectedResult expected = {
-      .initial_fen = "rnbqkbn1/ppppppp1/8/6r1/8/8/PPPPP2P/RNBQK2R b KQq - 0 1",
-      .result = false,
-      .next_turn = BLACK,
-      .moving_piece = {WHITE, PIECE_KING},
-      .move = {E1, G1, CASTLING},
-  };
-  check_case(expected);
-}
-
-Test(unique_moves, e5_wrong_turn) {
-  ExpectedResult expected = {
-      .result = false,
-      .next_turn = WHITE,
-      .moving_piece = {BLACK, PIECE_PAWN},
-      .move = {E7, E5},
-  };
-
-  check_case(expected);
-}
-
-Test(unique_moves, e5_from_empty_square) {
-  ExpectedResult expected = {
-      .result = false,
-      .next_turn = WHITE,
-      .moving_piece = {WHITE, PIECE_NONE},
-      .move = {E4, E5},
-  };
-
   check_case(expected);
 }

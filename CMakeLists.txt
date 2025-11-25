@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(cless-uci LANGUAGES CXX)
+project(clessy LANGUAGES CXX)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS
     ON
@@ -8,11 +8,17 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(SOURCES src/main.cpp src/uci.cpp src/engine.cpp src/position.cpp
-            src/move_gen.cpp src/attacks.cpp)
+set(SOURCES
+    src/main.cpp
+    src/uci.cpp
+    src/engine.cpp
+    src/position.cpp
+    src/move_gen.cpp
+    src/attacks.cpp
+    src/uci_utils.cpp)
 
-add_executable(cless-uci ${SOURCES})
-target_include_directories(cless-uci PRIVATE ${PROJECT_SOURCE_DIR}/include)
+add_executable(clessy ${SOURCES})
+target_include_directories(clessy PRIVATE ${PROJECT_SOURCE_DIR}/include)
 
 enable_testing()
 

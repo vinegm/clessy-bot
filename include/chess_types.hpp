@@ -21,6 +21,7 @@
 #define FILE_H (FILE_A << 7)
 
 #define MAX_POSSIBLE_LEGAL_MOVES 256
+#define INITIAL_POSITION_FEN "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
 // clang-format off
 // Little-endian rank-file
