@@ -1,8 +1,10 @@
 #include "move_gen.hpp"
 
 #include "chess_types.hpp"
+#include "position.hpp"
 
 #include <cstdint>
+#include <sys/types.h>
 
 MoveList MoveGenerator::generate_pseudo_legal_moves(const Position &position) const {
   MoveList move_list;
@@ -29,9 +31,11 @@ MoveList MoveGenerator::generate_pseudo_legal_moves(const Position &position) co
 MoveList MoveGenerator::generate_legal_moves(const Position &position) const {
   MoveList pseudo_legal = generate_pseudo_legal_moves(position);
 
+  Position temp_position = position;
+
   MoveList legal_moves;
   for (int i = 0; i < pseudo_legal.count; i++) {
-    if (is_legal_move(position, pseudo_legal[i])) { legal_moves.add_move(pseudo_legal[i]); }
+    if (is_legal_move(temp_position, pseudo_legal[i])) { legal_moves.add_move(pseudo_legal[i]); }
   }
 
   return legal_moves;
@@ -248,30 +252,17 @@ bool MoveGenerator::is_in_check(const Position &position, PieceColor color) cons
   return is_square_attacked(position, king_square, opposite_color(color));
 }
 
-bool MoveGenerator::is_legal_move(const Position &position, const Move &move) const {
-  Position temp_position = position;
-  temp_position.make_move(move);
+bool MoveGenerator::is_legal_move(Position &position, const Move &move) const {
+  PieceColor original_to_move = position.to_move;
 
-  if (is_in_check(temp_position, position.to_move)) return false;
+  position.make_move(move);
+  bool check_res = is_in_check(position, original_to_move);
+  position.undo_move();
 
-  return true;
+  return !check_res;
 }
 
 Square MoveGenerator::find_king(const Position &position, PieceColor color) const {
   const uint64_t king = position.bitboards[bitboard_index(color, PIECE_KING)];
   return static_cast<Square>(lsb_index(king));
 }
-
-template int MoveGenerator::generate_pawn_moves<WHITE>(const Position &position, Move *moves) const;
-template int MoveGenerator::generate_pawn_moves<BLACK>(const Position &position, Move *moves) const;
-
-template int
-    MoveGenerator::generate_piece_moves<PIECE_KNIGHT>(const Position &position, Move *moves) const;
-template int
-    MoveGenerator::generate_piece_moves<PIECE_BISHOP>(const Position &position, Move *moves) const;
-template int
-    MoveGenerator::generate_piece_moves<PIECE_ROOK>(const Position &position, Move *moves) const;
-template int
-    MoveGenerator::generate_piece_moves<PIECE_QUEEN>(const Position &position, Move *moves) const;
-template int
-    MoveGenerator::generate_piece_moves<PIECE_KING>(const Position &position, Move *moves) const;

@@ -1,11 +1,11 @@
 #pragma once
 
 #include "attacks.hpp"
-#include "chess_types.hpp"
-#include "position.hpp"
 
 #include <array>
 #include <cstdint>
+
+class Position;
 
 struct MoveList {
   Move moves[MAX_POSSIBLE_LEGAL_MOVES];
@@ -49,7 +49,7 @@ private:
 
   bool is_square_attacked(const Position &position, Square square, PieceColor by_color) const;
   bool is_in_check(const Position &position, PieceColor color) const;
-  bool is_legal_move(const Position &position, const Move &move) const;
+  bool is_legal_move(Position &position, const Move &move) const;
   Square find_king(const Position &position, PieceColor color) const;
 
   const std::array<std::array<uint64_t, 64>, 2> PAWN_ATTACKS = init_pawn_attacks();
