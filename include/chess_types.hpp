@@ -89,7 +89,12 @@ struct Piece {
   PieceColor color;
   PieceType type;
 
-  bool operator==(const Piece &other) const { return color == other.color && type == other.type; }
+  bool operator==(const Piece &other) const {
+    bool eq_color = color == other.color;
+    bool eq_type = type == other.type;
+
+    return eq_color && eq_type;
+  }
 
   bool operator!=(const Piece &other) const { return !(*this == other); }
 };
@@ -114,48 +119,48 @@ struct Move {
   bool is_en_passant() const { return (type & EN_PASSANT) != 0; }
 
   bool operator==(const Move &other) const {
-    return from == other.from && to == other.to && type == other.type
-           && promotion_piece == other.promotion_piece;
+    bool eq_to = to == other.to;
+    bool eq_from = from == other.from;
+    bool eq_type = type == other.type;
+    bool eq_promotion = promotion_piece == other.promotion_piece;
+
+    return eq_to && eq_from && eq_type && eq_promotion;
   }
 
   bool operator!=(const Move &other) const { return !(*this == other); }
 };
 
-constexpr uint64_t square_to_bit(Square square) { return 1ULL << (square); }
+constexpr PieceColor opposite_color(PieceColor color) { return (color == WHITE) ? BLACK : WHITE; }
+
+constexpr uint64_t square_to_bit(Square square) { return 1ULL << square; }
 constexpr int square_file(int sq) { return sq % 8; }
 constexpr int square_rank(int sq) { return sq / 8; }
+
 constexpr Square indexes_to_square(int rank, int file) {
   return static_cast<Square>((rank) * 8 + (file));
 }
 
+/**
+ * @brief Get the index for the bitboard corresponding to a piece color and type.
+ *
+ * @param color
+ * @param type
+ * @return BitboardIndex
+ */
 constexpr BitboardIndex bitboard_index(PieceColor color, PieceType type) {
   return static_cast<BitboardIndex>((color * 6) + type - 1);
 }
 
-constexpr PieceColor opposite_color(PieceColor color) { return (color == WHITE) ? BLACK : WHITE; }
-
 constexpr uint8_t encode_piece(PieceColor color, PieceType type) { return (color << 7) | type; }
 
-constexpr Piece decode_piece(uint8_t code) {
-  PieceColor color = static_cast<PieceColor>(code >> 7);
-  PieceType type = static_cast<PieceType>(code & 0x7F);
-  return Piece{color, type};
-}
-
 constexpr PieceColor decode_color(uint8_t code) { return static_cast<PieceColor>(code >> 7); }
-
 constexpr PieceType decode_type(uint8_t code) { return static_cast<PieceType>(code & 0x7F); }
 
-/**
- * @brief Pop the least significant bit from a bitboard and return its index.
- *
- * @param bitboard
- * @return int
- */
-constexpr int pop_lsb(uint64_t &bitboard) {
-  int index = __builtin_ctzll(bitboard);
-  bitboard &= bitboard - 1;
-  return index;
+constexpr Piece decode_piece(uint8_t code) {
+  PieceColor color = decode_color(code);
+  PieceType type = decode_type(code);
+
+  return Piece{color, type};
 }
 
 /**
@@ -165,6 +170,30 @@ constexpr int pop_lsb(uint64_t &bitboard) {
  * @return int
  */
 constexpr int lsb_index(uint64_t bitboard) { return __builtin_ctzll(bitboard); }
+
+/**
+ * @brief Pop the least significant bit from a bitboard and return it.
+ *
+ * @param bitboard
+ * @return uint64_t
+ */
+constexpr uint64_t pop_lsb(uint64_t &bitboard) {
+  uint64_t lsb = bitboard & -bitboard;
+  bitboard &= bitboard - 1;
+  return lsb;
+}
+
+/**
+ * @brief Pop the least significant bit from a bitboard and return its index.
+ *
+ * @param bitboard
+ * @return int
+ */
+constexpr int pop_lsb_index(uint64_t &bitboard) {
+  int index = lsb_index(bitboard);
+  bitboard &= bitboard - 1;
+  return index;
+}
 
 /**
  * @brief Count the number of bits set in a bitboard.
@@ -180,7 +209,7 @@ constexpr int count_bits(uint64_t bitboard) { return __builtin_popcountll(bitboa
  * @tparam direction The direction to move (NORTH, SOUTH, EAST, WEST)
  * @param bb The input bitboard
  * @param squares The number of squares to move in that direction (must be positive)
- * @return uint64_t The new bitboard with the bit moved, or 0 if invalid
+ * @return uint64_t The new bitboard with the bit moved
  */
 template<MoveDirection direction>
 constexpr uint64_t move_bit(uint64_t bb, int squares) {
@@ -191,25 +220,25 @@ constexpr uint64_t move_bit(uint64_t bb, int squares) {
   uint64_t result = bb;
   for (int i = 0; i < squares; i++) {
     if constexpr (direction == NORTH) {
-      if ((result & RANK_8) != 0) return bb;
+      assert((result & RANK_8) == 0);
       result <<= 8;
       continue;
     }
 
     if constexpr (direction == SOUTH) {
-      if ((result & RANK_1) != 0) return bb;
+      assert((result & RANK_1) == 0);
       result >>= 8;
       continue;
     }
 
     if constexpr (direction == EAST) {
-      if ((result & FILE_H) != 0) return bb;
+      assert((result & FILE_H) == 0);
       result <<= 1;
       continue;
     }
 
     if constexpr (direction == WEST) {
-      if ((result & FILE_A) != 0) return bb;
+      assert((result & FILE_A) == 0);
       result >>= 1;
       continue;
     }
@@ -229,7 +258,7 @@ constexpr uint64_t move_bit(uint64_t bb, int squares) {
  * @param bb The input bitboard (should have exactly one bit set)
  * @param direction The direction to move
  * @param squares The number of squares to move in that direction (must be positive)
- * @return uint64_t The new bitboard with the bit moved, or 0 if invalid
+ * @return uint64_t The new bitboard with the bit moved
  */
 constexpr uint64_t move_bit(uint64_t bb, MoveDirection direction, int squares) {
   switch (direction) {
@@ -237,6 +266,6 @@ constexpr uint64_t move_bit(uint64_t bb, MoveDirection direction, int squares) {
     case SOUTH: return move_bit<SOUTH>(bb, squares);
     case EAST: return move_bit<EAST>(bb, squares);
     case WEST: return move_bit<WEST>(bb, squares);
-    default: return 0;
+    default: assert(false); return 0;
   }
 }

@@ -62,7 +62,7 @@ int MoveGenerator::generate_pawn_moves(const Position &position, Move *moves) co
   }
 
   while (single_pushes) {
-    const Square to = static_cast<Square>(pop_lsb(single_pushes));
+    const Square to = static_cast<Square>(pop_lsb_index(single_pushes));
     const Square from = static_cast<Square>(to - Forward);
 
     if (square_to_bit(to) & PromotionRank) {
@@ -87,7 +87,7 @@ int MoveGenerator::generate_pawn_moves(const Position &position, Move *moves) co
   }
 
   while (double_pushes) {
-    const Square to = static_cast<Square>(pop_lsb(double_pushes));
+    const Square to = static_cast<Square>(pop_lsb_index(double_pushes));
     const Square from = static_cast<Square>(to - 2 * Forward);
     *moves++ = {from, to};
   }
@@ -95,11 +95,11 @@ int MoveGenerator::generate_pawn_moves(const Position &position, Move *moves) co
   // Regular captures
   uint64_t pawns_copy = our_pawns;
   while (pawns_copy) {
-    const Square from = static_cast<Square>(pop_lsb(pawns_copy));
+    const Square from = static_cast<Square>(pop_lsb_index(pawns_copy));
     uint64_t attacks = PAWN_ATTACKS[Us][from] & enemy_pieces;
 
     while (attacks) {
-      const Square to = static_cast<Square>(pop_lsb(attacks));
+      const Square to = static_cast<Square>(pop_lsb_index(attacks));
 
       if (square_to_bit(to) & PromotionRank) {
         *moves++ = {from, to, static_cast<MoveType>(CAPTURE | PROMOTION), PIECE_QUEEN};
@@ -118,7 +118,7 @@ int MoveGenerator::generate_pawn_moves(const Position &position, Move *moves) co
     pawns_copy = our_pawns;
 
     while (pawns_copy) {
-      const Square from = static_cast<Square>(pop_lsb(pawns_copy));
+      const Square from = static_cast<Square>(pop_lsb_index(pawns_copy));
       if (PAWN_ATTACKS[Us][from] & square_to_bit(en_passant_square)) {
         *moves++ = {from, en_passant_square, EN_PASSANT};
       }
@@ -139,7 +139,7 @@ int MoveGenerator::generate_piece_moves(const Position &position, Move *moves) c
   const uint64_t enemy_occupancy = position.occupancy[them];
 
   while (our_pieces_bb) {
-    const Square from = static_cast<Square>(pop_lsb(our_pieces_bb));
+    const Square from = static_cast<Square>(pop_lsb_index(our_pieces_bb));
     uint64_t attacks;
 
     if constexpr (PieceT == PIECE_KNIGHT) {
@@ -158,7 +158,7 @@ int MoveGenerator::generate_piece_moves(const Position &position, Move *moves) c
     attacks &= ~our_occupancy;
 
     while (attacks) {
-      const Square to = static_cast<Square>(pop_lsb(attacks));
+      const Square to = static_cast<Square>(pop_lsb_index(attacks));
       const MoveType move_type = (square_to_bit(to) & enemy_occupancy) ? CAPTURE : NORMAL_MOVE;
 
       *moves++ = {from, to, move_type};
