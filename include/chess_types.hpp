@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <cstdint>
 
 #define RANK_1 0xFFULL
@@ -172,3 +173,70 @@ constexpr int lsb_index(uint64_t bitboard) { return __builtin_ctzll(bitboard); }
  * @return int
  */
 constexpr int count_bits(uint64_t bitboard) { return __builtin_popcountll(bitboard); }
+
+/**
+ * @brief Move a single bit in a bitboard by a specified number of squares in a given direction.
+ *
+ * @tparam direction The direction to move (NORTH, SOUTH, EAST, WEST)
+ * @param bb The input bitboard
+ * @param squares The number of squares to move in that direction (must be positive)
+ * @return uint64_t The new bitboard with the bit moved, or 0 if invalid
+ */
+template<MoveDirection direction>
+constexpr uint64_t move_bit(uint64_t bb, int squares) {
+  assert(bb != 0);
+  assert(count_bits(bb) == 1);
+  assert(squares > 0);
+
+  uint64_t result = bb;
+  for (int i = 0; i < squares; i++) {
+    if constexpr (direction == NORTH) {
+      if ((result & RANK_8) != 0) return bb;
+      result <<= 8;
+      continue;
+    }
+
+    if constexpr (direction == SOUTH) {
+      if ((result & RANK_1) != 0) return bb;
+      result >>= 8;
+      continue;
+    }
+
+    if constexpr (direction == EAST) {
+      if ((result & FILE_H) != 0) return bb;
+      result <<= 1;
+      continue;
+    }
+
+    if constexpr (direction == WEST) {
+      if ((result & FILE_A) != 0) return bb;
+      result >>= 1;
+      continue;
+    }
+
+    static_assert(
+        direction == NORTH || direction == SOUTH || direction == EAST || direction == WEST,
+        "Invalid direction"
+    );
+  }
+
+  return result;
+}
+
+/**
+ * @brief Move a single bit in a bitboard by a specified number of squares in a given direction.
+ *
+ * @param bb The input bitboard (should have exactly one bit set)
+ * @param direction The direction to move
+ * @param squares The number of squares to move in that direction (must be positive)
+ * @return uint64_t The new bitboard with the bit moved, or 0 if invalid
+ */
+constexpr uint64_t move_bit(uint64_t bb, MoveDirection direction, int squares) {
+  switch (direction) {
+    case NORTH: return move_bit<NORTH>(bb, squares);
+    case SOUTH: return move_bit<SOUTH>(bb, squares);
+    case EAST: return move_bit<EAST>(bb, squares);
+    case WEST: return move_bit<WEST>(bb, squares);
+    default: return 0;
+  }
+}
