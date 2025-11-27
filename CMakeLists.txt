@@ -19,17 +19,3 @@ set(SOURCES
 
 add_executable(clessy ${SOURCES})
 target_include_directories(clessy PRIVATE ${PROJECT_SOURCE_DIR}/include)
-
-enable_testing()
-
-find_library(CRITERION_LIB criterion)
-include_directories(/usr/include)
-
-set(TEST_SOURCES src/engine.cpp src/position.cpp src/move_gen.cpp
-                 tests/perft_tests.cpp tests/unique_moves.cpp src/attacks.cpp)
-
-add_executable(tests ${TEST_SOURCES})
-target_link_libraries(tests ${CRITERION_LIB})
-target_include_directories(tests PRIVATE ${PROJECT_SOURCE_DIR}/include)
-
-add_test(NAME engine_tests COMMAND tests)

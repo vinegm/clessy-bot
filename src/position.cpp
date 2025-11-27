@@ -14,6 +14,7 @@ void Position::set_fen(const std::string &fen) {
   occupancy[WHITE] = 0;
   occupancy[BLACK] = 0;
   occupancy[ANY] = 0;
+  castling_rights = 0;
   undo_stack.clear();
 
   std::istringstream fen_stream(fen);
