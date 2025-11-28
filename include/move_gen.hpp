@@ -33,6 +33,15 @@ struct MoveList {
   const Move &operator[](int index) const { return moves[index]; }
 };
 
+struct Masks {
+  uint64_t enemy_attacks = 0;
+  uint64_t check_mask = 0;
+  uint64_t checkers = 0;
+
+  // TODO: implement missing masks
+  uint64_t pinned_pieces = 0;
+};
+
 class MoveGenerator {
 public:
   MoveList generate_pseudo_legal_moves(const Position &position) const;
@@ -40,12 +49,13 @@ public:
 
 private:
   template<PieceColor Us>
-  int generate_pawn_moves(const Position &position, Move *moves) const;
+  int generate_pawn_moves(const Position &position, Move *moves, Masks masks) const;
 
   template<PieceType PieceT>
-  int generate_piece_moves(const Position &position, Move *moves) const;
+  int generate_piece_moves(const Position &position, Move *moves, Masks masks) const;
 
-  int generate_castling_moves(const Position &position, Move *moves) const;
+  int generate_castling_moves(const Position &position, Move *moves, Masks masks) const;
+  Masks generate_masks(const Position &position) const;
 
   bool is_square_attacked(const Position &position, Square square, PieceColor by_color) const;
   bool is_in_check(const Position &position, PieceColor color) const;

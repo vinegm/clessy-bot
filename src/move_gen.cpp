@@ -11,18 +11,20 @@ MoveList MoveGenerator::generate_pseudo_legal_moves(const Position &position) co
   Move *moves = move_list.moves;
   Move *start = moves;
 
+  Masks masks = generate_masks(position);
+
   if (position.to_move == WHITE) {
-    moves += generate_pawn_moves<WHITE>(position, moves);
+    moves += generate_pawn_moves<WHITE>(position, moves, masks);
   } else {
-    moves += generate_pawn_moves<BLACK>(position, moves);
+    moves += generate_pawn_moves<BLACK>(position, moves, masks);
   }
 
-  moves += generate_piece_moves<PIECE_KNIGHT>(position, moves);
-  moves += generate_piece_moves<PIECE_BISHOP>(position, moves);
-  moves += generate_piece_moves<PIECE_ROOK>(position, moves);
-  moves += generate_piece_moves<PIECE_QUEEN>(position, moves);
-  moves += generate_piece_moves<PIECE_KING>(position, moves);
-  moves += generate_castling_moves(position, moves);
+  moves += generate_piece_moves<PIECE_KNIGHT>(position, moves, masks);
+  moves += generate_piece_moves<PIECE_BISHOP>(position, moves, masks);
+  moves += generate_piece_moves<PIECE_ROOK>(position, moves, masks);
+  moves += generate_piece_moves<PIECE_QUEEN>(position, moves, masks);
+  moves += generate_piece_moves<PIECE_KING>(position, moves, masks);
+  moves += generate_castling_moves(position, moves, masks);
 
   move_list.count = moves - start;
   return move_list;
@@ -42,7 +44,10 @@ MoveList MoveGenerator::generate_legal_moves(const Position &position) const {
 }
 
 template<PieceColor Us>
-int MoveGenerator::generate_pawn_moves(const Position &position, Move *moves) const {
+int MoveGenerator::generate_pawn_moves(const Position &position, Move *moves, Masks masks) const {
+  int num_checks = count_bits(masks.checkers);
+  if (num_checks > 2) return 0;
+
   Move *start = moves;
   constexpr PieceColor Them = (Us == WHITE) ? BLACK : WHITE;
   constexpr int Forward = (Us == WHITE) ? NORTH : SOUTH;
@@ -98,17 +103,20 @@ int MoveGenerator::generate_pawn_moves(const Position &position, Move *moves) co
     const Square from = static_cast<Square>(pop_lsb_index(pawns_copy));
     uint64_t attacks = PAWN_ATTACKS[Us][from] & enemy_pieces;
 
+    if (num_checks == 1) attacks &= masks.check_mask | masks.checkers;
+
     while (attacks) {
       const Square to = static_cast<Square>(pop_lsb_index(attacks));
 
-      if (square_to_bit(to) & PromotionRank) {
-        *moves++ = {from, to, static_cast<MoveType>(CAPTURE | PROMOTION), PIECE_QUEEN};
-        *moves++ = {from, to, static_cast<MoveType>(CAPTURE | PROMOTION), PIECE_ROOK};
-        *moves++ = {from, to, static_cast<MoveType>(CAPTURE | PROMOTION), PIECE_BISHOP};
-        *moves++ = {from, to, static_cast<MoveType>(CAPTURE | PROMOTION), PIECE_KNIGHT};
-      } else {
+      if ((square_to_bit(to) & PromotionRank) == 0) {
         *moves++ = {from, to, CAPTURE};
+        continue;
       }
+
+      *moves++ = {from, to, static_cast<MoveType>(CAPTURE | PROMOTION), PIECE_QUEEN};
+      *moves++ = {from, to, static_cast<MoveType>(CAPTURE | PROMOTION), PIECE_ROOK};
+      *moves++ = {from, to, static_cast<MoveType>(CAPTURE | PROMOTION), PIECE_BISHOP};
+      *moves++ = {from, to, static_cast<MoveType>(CAPTURE | PROMOTION), PIECE_KNIGHT};
     }
   }
 
@@ -129,7 +137,10 @@ int MoveGenerator::generate_pawn_moves(const Position &position, Move *moves) co
 }
 
 template<PieceType PieceT>
-int MoveGenerator::generate_piece_moves(const Position &position, Move *moves) const {
+int MoveGenerator::generate_piece_moves(const Position &position, Move *moves, Masks masks) const {
+  int num_checks = count_bits(masks.checkers);
+  if (num_checks > 2) return 0;
+
   Move *start = moves;
   const PieceColor us = position.to_move;
   const PieceColor them = opposite_color(us);
@@ -152,10 +163,13 @@ int MoveGenerator::generate_piece_moves(const Position &position, Move *moves) c
       attacks = get_rook_attacks(from, position.occupancy[ANY])
                 | get_bishop_attacks(from, position.occupancy[ANY]);
     } else if constexpr (PieceT == PIECE_KING) {
-      attacks = KING_ATTACKS[from];
+      attacks = KING_ATTACKS[from] & ~masks.enemy_attacks;
     }
 
     attacks &= ~our_occupancy;
+    if constexpr (PieceT != PIECE_KING) {
+      if (num_checks == 1) attacks &= masks.check_mask | masks.checkers;
+    }
 
     while (attacks) {
       const Square to = static_cast<Square>(pop_lsb_index(attacks));
@@ -168,25 +182,32 @@ int MoveGenerator::generate_piece_moves(const Position &position, Move *moves) c
   return moves - start;
 }
 
-int MoveGenerator::generate_castling_moves(const Position &position, Move *moves) const {
+int MoveGenerator::generate_castling_moves(
+    const Position &position,
+    Move *moves,
+    Masks masks
+) const {
   Move *start = moves;
   const PieceColor us = position.to_move;
   const PieceColor them = opposite_color(us);
 
   if (position.castling_rights == 0) return 0;
+  if (masks.checkers) return 0;
 
-  const Square king_square = find_king(position, us);
+  const uint64_t king_bb = position.bitboards[bitboard_index(us, PIECE_KING)];
+  const Square king_square = static_cast<Square>(lsb_index(king_bb));
 
   // King-side castling
   if ((us == WHITE && (position.castling_rights & WHITE_CASTLE_KING))
       || (us == BLACK && (position.castling_rights & BLACK_CASTLE_KING))) {
-    const Square king_dest = static_cast<Square>(king_square + 2 * EAST);
-    const Square middle_square = static_cast<Square>(king_square + EAST);
+    const uint64_t destination_bb = move_bit<EAST>(king_bb, 2);
+    const uint64_t middle_bb = move_bit<EAST>(king_bb, 1);
 
-    if (!(position.occupancy[ANY] & (square_to_bit(middle_square) | square_to_bit(king_dest)))
-        && !is_square_attacked(position, king_square, them)
-        && !is_square_attacked(position, middle_square, them)
-        && !is_square_attacked(position, king_dest, them)) {
+    const uint64_t between_squares = middle_bb | destination_bb;
+    const uint64_t king_path = king_bb | between_squares;
+
+    if (!(position.occupancy[ANY] & between_squares) && !(masks.enemy_attacks & king_path)) {
+      const Square king_dest = static_cast<Square>(lsb_index(destination_bb));
       *moves++ = {king_square, king_dest, CASTLING};
     }
   }
@@ -194,20 +215,67 @@ int MoveGenerator::generate_castling_moves(const Position &position, Move *moves
   // Queen-side castling
   if ((us == WHITE && (position.castling_rights & WHITE_CASTLE_QUEEN))
       || (us == BLACK && (position.castling_rights & BLACK_CASTLE_QUEEN))) {
-    const Square king_dest = static_cast<Square>(king_square + 2 * WEST);
-    const Square middle_square = static_cast<Square>(king_square + WEST);
-    const Square outer_square = static_cast<Square>(king_square + 3 * WEST);
+    const uint64_t destination_bb = move_bit<WEST>(king_bb, 2);
+    const uint64_t middle_bb = move_bit<WEST>(king_bb, 1);
+    const uint64_t outer_bb = move_bit<WEST>(king_bb, 3);
 
-    if (!(position.occupancy[ANY]
-          & (square_to_bit(middle_square) | square_to_bit(king_dest) | square_to_bit(outer_square)))
-        && !is_square_attacked(position, king_square, them)
-        && !is_square_attacked(position, middle_square, them)
-        && !is_square_attacked(position, king_dest, them)) {
+    const uint64_t between_squares = middle_bb | destination_bb | outer_bb;
+    const uint64_t king_path = king_bb | middle_bb | destination_bb;
+
+    if (!(position.occupancy[ANY] & between_squares) && !(masks.enemy_attacks & king_path)) {
+      const Square king_dest = static_cast<Square>(lsb_index(destination_bb));
       *moves++ = {king_square, king_dest, CASTLING};
     }
   }
 
   return moves - start;
+}
+
+Masks MoveGenerator::generate_masks(const Position &position) const {
+  const PieceColor us = position.to_move;
+  const PieceColor them = opposite_color(us);
+  const uint64_t our_king_bb = position.bitboards[bitboard_index(us, PIECE_KING)];
+  const Square king_square = static_cast<Square>(lsb_index(our_king_bb));
+  Masks masks;
+
+  auto add_piece_attacks = [&](PieceType piece_type, auto attack_func) {
+    uint64_t pieces = position.bitboards[bitboard_index(them, piece_type)];
+    while (pieces) {
+      const int from_index = pop_lsb_index(pieces);
+      const Square from = static_cast<Square>(from_index);
+      const uint64_t from_bb = square_to_bit(from);
+
+      uint64_t attacks = attack_func(from);
+      masks.enemy_attacks |= attacks;
+
+      if (attacks & our_king_bb) {
+        masks.checkers |= from_bb;
+        // TODO: For sliding pieces only append the ray that checks the king
+        masks.check_mask |= attacks;
+      }
+    }
+  };
+
+  add_piece_attacks(PIECE_PAWN, [&](Square from) { return PAWN_ATTACKS[them][from]; });
+  add_piece_attacks(PIECE_KNIGHT, [&](Square from) { return KNIGHT_ATTACKS[from]; });
+  add_piece_attacks(PIECE_BISHOP, [&](Square from) {
+    return get_bishop_attacks(from, position.occupancy[ANY]);
+  });
+  add_piece_attacks(PIECE_ROOK, [&](Square from) {
+    return get_rook_attacks(from, position.occupancy[ANY]);
+  });
+  add_piece_attacks(PIECE_QUEEN, [&](Square from) {
+    return get_rook_attacks(from, position.occupancy[ANY])
+           | get_bishop_attacks(from, position.occupancy[ANY]);
+  });
+
+  uint64_t enemy_king = position.bitboards[bitboard_index(them, PIECE_KING)];
+  if (enemy_king) {
+    const Square from = static_cast<Square>(lsb_index(enemy_king));
+    masks.enemy_attacks |= KING_ATTACKS[from];
+  }
+
+  return masks;
 }
 
 bool MoveGenerator::is_square_attacked(
