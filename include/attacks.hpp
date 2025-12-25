@@ -3,6 +3,7 @@
 #include "chess_types.hpp"
 
 #include <array>
+#include <cassert>
 
 constexpr std::array<std::array<uint64_t, 64>, 2> init_pawn_attacks() {
   std::array<std::array<uint64_t, 64>, 2> pawn_attacks{}; // [Color][Square]
@@ -70,5 +71,30 @@ constexpr std::array<uint64_t, 64> init_king_attacks() {
   return king_attacks;
 }
 
+constexpr std::array<CastlingRights, 64> init_castling_masks() {
+  std::array<CastlingRights, 64> castling_masks{};
+
+  for (int square = 0; square < 64; square++) {
+    castling_masks[square] = ANY_CASTLING;
+
+    switch (square) {
+      case E1: castling_masks[square] &= ~(W_CASTLE_KING | W_CASTLE_QUEEN); break;
+      case H1: castling_masks[square] &= ~W_CASTLE_KING; break;
+      case A1: castling_masks[square] &= ~W_CASTLE_QUEEN; break;
+      case E8: castling_masks[square] &= ~(B_CASTLE_KING | B_CASTLE_QUEEN); break;
+      case H8: castling_masks[square] &= ~B_CASTLE_KING; break;
+      case A8: castling_masks[square] &= ~B_CASTLE_QUEEN; break;
+      default: break;
+    }
+  }
+
+  return castling_masks;
+}
+
 uint64_t get_rook_attacks(int square, uint64_t occupancy);
 uint64_t get_bishop_attacks(int square, uint64_t occupancy);
+
+constexpr const auto PAWN_ATTACKS = init_pawn_attacks();
+constexpr const auto KNIGHT_ATTACKS = init_knight_attacks();
+constexpr const auto KING_ATTACKS = init_king_attacks();
+constexpr const auto CASTLING_MASKS = init_castling_masks();

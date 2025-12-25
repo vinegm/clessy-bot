@@ -1,8 +1,7 @@
 #pragma once
 
-#include "attacks.hpp"
+#include "chess_types.hpp"
 
-#include <array>
 #include <cstdint>
 
 class Position;
@@ -13,12 +12,8 @@ struct MoveList {
 
   void add_move(const Move &move) { moves[count++] = move; }
 
-  void add_move(
-      Square from,
-      Square to,
-      MoveType type = NORMAL_MOVE,
-      PieceType promotion = NO_TYPE
-  ) {
+  void
+      add_move(Square from, Square to, MoveType type = NORMAL_MOVE, PieceType promotion = NO_TYPE) {
     moves[count++] = {from, to, type, promotion};
   }
 
@@ -61,8 +56,4 @@ private:
   bool is_in_check(const Position &position, Color color) const;
   bool is_legal_move(Position &position, const Move &move) const;
   Square find_king(const Position &position, Color color) const;
-
-  const std::array<std::array<uint64_t, 64>, 2> PAWN_ATTACKS = init_pawn_attacks();
-  const std::array<uint64_t, 64> KNIGHT_ATTACKS = init_knight_attacks();
-  const std::array<uint64_t, 64> KING_ATTACKS = init_king_attacks();
 };

@@ -1,5 +1,6 @@
 #include "move_gen.hpp"
 
+#include "attacks.hpp"
 #include "chess_types.hpp"
 #include "position.hpp"
 
@@ -191,15 +192,15 @@ int MoveGenerator::generate_castling_moves(
   const Color us = position.to_move;
   const Color them = opposite_color(us);
 
-  if (position.castling_rights == 0) return 0;
+  if (position.castling_rights == NO_CASTLING) return 0;
   if (masks.checkers) return 0;
 
   const uint64_t king_bb = position.get_bb(us, KING);
   const Square king_square = static_cast<Square>(lsb_square(king_bb));
 
   // King-side castling
-  if ((us == WHITE && (position.castling_rights & WHITE_CASTLE_KING))
-      || (us == BLACK && (position.castling_rights & BLACK_CASTLE_KING))) {
+  if ((us == WHITE && (position.castling_rights & W_CASTLE_KING))
+      || (us == BLACK && (position.castling_rights & B_CASTLE_KING))) {
     const uint64_t destination_bb = move_bit<EAST>(king_bb, 2);
     const uint64_t middle_bb = move_bit<EAST>(king_bb, 1);
 
@@ -213,8 +214,8 @@ int MoveGenerator::generate_castling_moves(
   }
 
   // Queen-side castling
-  if ((us == WHITE && (position.castling_rights & WHITE_CASTLE_QUEEN))
-      || (us == BLACK && (position.castling_rights & BLACK_CASTLE_QUEEN))) {
+  if ((us == WHITE && (position.castling_rights & W_CASTLE_QUEEN))
+      || (us == BLACK && (position.castling_rights & B_CASTLE_QUEEN))) {
     const uint64_t destination_bb = move_bit<WEST>(king_bb, 2);
     const uint64_t middle_bb = move_bit<WEST>(king_bb, 1);
     const uint64_t outer_bb = move_bit<WEST>(king_bb, 3);

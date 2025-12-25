@@ -1,5 +1,6 @@
 #include "position.hpp"
 
+#include "attacks.hpp"
 #include "chess_types.hpp"
 
 #include <sstream>
@@ -9,12 +10,12 @@ void Position::set_fen(const std::string &fen) {
     bitboards[i] = 0;
   }
   for (int i = 0; i < 64; i++) {
-    lookup_table[i] = 0;
+    lookup_table[i] = NO_PIECE;
   }
   occupancy[WHITE] = 0;
   occupancy[BLACK] = 0;
   occupancy[ANY_COLOR] = 0;
-  castling_rights = 0;
+  castling_rights = NO_CASTLING;
   undo_stack.clear();
 
   std::istringstream fen_stream(fen);
@@ -59,14 +60,14 @@ void Position::set_fen(const std::string &fen) {
   to_move = (active_color == "w") ? WHITE : BLACK;
 
   if (castling == "-") {
-    castling_rights = 0;
+    castling_rights = NO_CASTLING;
   } else {
     for (char c : castling) {
       switch (c) {
-        case 'K': castling_rights |= WHITE_CASTLE_KING; break;
-        case 'Q': castling_rights |= WHITE_CASTLE_QUEEN; break;
-        case 'k': castling_rights |= BLACK_CASTLE_KING; break;
-        case 'q': castling_rights |= BLACK_CASTLE_QUEEN; break;
+        case 'K': castling_rights |= W_CASTLE_KING; break;
+        case 'Q': castling_rights |= W_CASTLE_QUEEN; break;
+        case 'k': castling_rights |= B_CASTLE_KING; break;
+        case 'q': castling_rights |= B_CASTLE_QUEEN; break;
       }
     }
   }
@@ -135,13 +136,13 @@ std::string Position::get_fen() const {
 
   // Castling rights
   fen += ' ';
-  if (castling_rights == 0) {
+  if (castling_rights == NO_CASTLING) {
     fen += "-";
   } else {
-    if (castling_rights & WHITE_CASTLE_KING) fen += "K";
-    if (castling_rights & WHITE_CASTLE_QUEEN) fen += "Q";
-    if (castling_rights & BLACK_CASTLE_KING) fen += "k";
-    if (castling_rights & BLACK_CASTLE_QUEEN) fen += "q";
+    if (castling_rights & W_CASTLE_KING) fen += "K";
+    if (castling_rights & W_CASTLE_QUEEN) fen += "Q";
+    if (castling_rights & B_CASTLE_KING) fen += "k";
+    if (castling_rights & B_CASTLE_QUEEN) fen += "q";
   }
 
   // En passant square
@@ -167,39 +168,32 @@ std::string Position::get_fen() const {
   return fen;
 }
 
-Piece Position::get_piece_at(Square square) {
-  uint8_t encoded_piece = lookup_table[square];
-  if (encoded_piece == 0) return Piece{WHITE, NO_TYPE};
-
-  Color color = decode_color(encoded_piece);
-  PieceType type = decode_type(encoded_piece);
-  return Piece{color, type};
-}
+Piece Position::get_piece_at(Square square) { return lookup_table[square]; }
 
 void Position::make_move(const Move &move) {
-  uint8_t encoded_piece = lookup_table[move.from];
-  Piece piece = decode_piece(encoded_piece);
+  Piece encoded_piece = lookup_table[move.from];
+  Color piece_color = decode_color(encoded_piece);
+  PieceType piece_type = decode_type(encoded_piece);
   Square captured_square = get_captured_square(move);
 
-  uint8_t captured_piece_encoded = 0;
+  Piece captured_piece_encoded = NO_PIECE;
   if (move.is_capture()) {
     captured_piece_encoded = lookup_table[captured_square];
-    Piece captured_piece = decode_piece(captured_piece_encoded);
-    remove_piece(captured_piece.color, captured_piece.type, captured_square);
+    Color captured_color = decode_color(captured_piece_encoded);
+    PieceType captured_type = decode_type(captured_piece_encoded);
+    remove_piece(captured_color, captured_type, captured_square);
   }
 
   push_undo_info(move, captured_piece_encoded);
 
-  if (castling_rights != 0) update_castling_rights(move, piece, captured_square);
-
   en_passant_square.reset();
-  if (piece.type == PAWN || move.is_capture()) {
+  if (piece_type == PAWN || move.is_capture()) {
     halfmove_clock = 0;
   } else {
     halfmove_clock++;
   }
 
-  if (piece.type == PAWN) {
+  if (piece_type == PAWN) {
     if (abs(square_rank(move.to) - square_rank(move.from)) == 2) {
       int to_file = square_file(move.to);
       int from_rank = square_rank(move.from);
@@ -210,6 +204,7 @@ void Position::make_move(const Move &move) {
   }
 
   // Handle castling
+  update_castling_rights(move, captured_square);
   if (move.is_castling()) {
     Square rook_from, rook_to;
     if (move.to > move.from) {
@@ -221,17 +216,18 @@ void Position::make_move(const Move &move) {
     }
 
     uint8_t rook_encoded = lookup_table[rook_from];
-    Piece rook = decode_piece(rook_encoded);
+    Color rook_color = decode_color(rook_encoded);
+    PieceType rook_type = decode_type(rook_encoded);
 
-    remove_piece(rook.color, rook.type, rook_from);
-    add_piece(rook.color, rook.type, rook_to);
+    remove_piece(rook_color, rook_type, rook_from);
+    add_piece(rook_color, rook_type, rook_to);
   }
 
-  remove_piece(piece.color, piece.type, move.from);
+  remove_piece(piece_color, piece_type, move.from);
   if (move.is_promotion()) {
-    add_piece(piece.color, move.promotion_piece, move.to);
+    add_piece(piece_color, move.promotion_piece, move.to);
   } else {
-    add_piece(piece.color, piece.type, move.to);
+    add_piece(piece_color, piece_type, move.to);
   }
 
   pass_turn();
@@ -249,35 +245,35 @@ void Position::undo_move() {
   Square captured_square = get_captured_square(move);
 
   uint8_t moved_piece_encoded = lookup_table[to];
-  Piece moved_piece = decode_piece(moved_piece_encoded);
-  Piece captured_piece = decode_piece(undo_info.captured_piece_encoded);
+  Color moved_color = decode_color(moved_piece_encoded);
+  PieceType moved_type = decode_type(moved_piece_encoded);
+  Color captured_color = decode_color(undo_info.captured_piece_encoded);
+  PieceType captured_type = decode_type(undo_info.captured_piece_encoded);
 
-  remove_piece(moved_piece.color, moved_piece.type, to);
+  remove_piece(moved_color, moved_type, to);
 
   if (move.is_promotion()) {
-    add_piece(moved_piece.color, PAWN, from);
+    add_piece(moved_color, PAWN, from);
   } else {
-    add_piece(moved_piece.color, moved_piece.type, from);
+    add_piece(moved_color, moved_type, from);
   }
 
-  if (captured_piece.type != NO_TYPE)
-    add_piece(captured_piece.color, captured_piece.type, captured_square);
+  if (captured_type != NO_TYPE) add_piece(captured_color, captured_type, captured_square);
 
   if (move.is_castling()) {
-    Square rook_from, rook_to;
-    if (to > from) {
-      rook_from = static_cast<Square>(from + 3 * EAST);
-      rook_to = static_cast<Square>(from + EAST);
-    } else {
-      rook_from = static_cast<Square>(from + 4 * WEST);
-      rook_to = static_cast<Square>(from + WEST);
-    }
+    int is_kingside = (to > from);
+    int rook_from_offset = is_kingside * 3 + (1 - is_kingside) * -4;
+    int rook_to_offset = is_kingside * 1 + (1 - is_kingside) * -1;
+
+    Square rook_from = static_cast<Square>(from + rook_from_offset);
+    Square rook_to = static_cast<Square>(from + rook_to_offset);
 
     uint8_t rook_encoded = lookup_table[rook_to];
-    Piece rook = decode_piece(rook_encoded);
+    Color rook_color = decode_color(rook_encoded);
+    PieceType rook_type = decode_type(rook_encoded);
 
-    remove_piece(rook.color, rook.type, rook_to);
-    add_piece(rook.color, rook.type, rook_from);
+    remove_piece(rook_color, rook_type, rook_to);
+    add_piece(rook_color, rook_type, rook_from);
   }
 
   castling_rights = undo_info.castling_rights;
@@ -298,7 +294,7 @@ Square Position::get_captured_square(const Move &move) const {
   return move.to;
 }
 
-void Position::push_undo_info(const Move &move, uint8_t captured_piece_encoded) {
+void Position::push_undo_info(const Move &move, Piece captured_piece_encoded) {
   UndoInfo undo_info;
   undo_info.move = move;
   undo_info.captured_piece_encoded = captured_piece_encoded;
@@ -311,46 +307,15 @@ void Position::push_undo_info(const Move &move, uint8_t captured_piece_encoded) 
   undo_stack.push_back(undo_info);
 }
 
-void Position::update_castling_rights(
-    const Move &move,
-    const Piece &piece,
-    Square captured_square
-) {
-  if (piece.type == KING) {
-    if (piece.color == WHITE) {
-      castling_rights &= ~(WHITE_CASTLE_KING | WHITE_CASTLE_QUEEN);
-    } else {
-      castling_rights &= ~(BLACK_CASTLE_KING | BLACK_CASTLE_QUEEN);
-    }
-    return;
-  }
+void Position::update_castling_rights(const Move &move, Square captured_square) {
+  CastlingRights mask_from = CASTLING_MASKS[move.from];
+  CastlingRights mask_to = CASTLING_MASKS[move.to];
+  CastlingRights mask = mask_from & mask_to;
 
-  if (piece.type == ROOK) {
-    if (piece.color == WHITE) {
-      if (move.from == H1) {
-        castling_rights &= ~WHITE_CASTLE_KING;
-      } else if (move.from == A1) {
-        castling_rights &= ~WHITE_CASTLE_QUEEN;
-      }
-    } else {
-      if (move.from == H8) {
-        castling_rights &= ~BLACK_CASTLE_KING;
-      } else if (move.from == A8) {
-        castling_rights &= ~BLACK_CASTLE_QUEEN;
-      }
-    }
-  }
+  castling_rights &= mask;
 
-  if (move.is_capture()) {
-    if (captured_square == H1) {
-      castling_rights &= ~WHITE_CASTLE_KING;
-    } else if (captured_square == A1) {
-      castling_rights &= ~WHITE_CASTLE_QUEEN;
-    } else if (captured_square == H8) {
-      castling_rights &= ~BLACK_CASTLE_KING;
-    } else if (captured_square == A8) {
-      castling_rights &= ~BLACK_CASTLE_QUEEN;
-    }
+  if (move.is_capture() && captured_square != move.to) {
+    castling_rights &= CASTLING_MASKS[captured_square];
   }
 }
 
@@ -369,7 +334,7 @@ void Position::remove_piece(Color color, PieceType piece, Square square) {
   occupancy[color] &= ~square_bit;
   occupancy[ANY_COLOR] &= ~square_bit;
 
-  lookup_table[square] = 0;
+  lookup_table[square] = NO_PIECE;
 }
 
 void Position::pass_turn() {

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cassert>
 #include <cstdint>
 
 #define RANK_1 0xFFULL
@@ -46,13 +45,41 @@ enum MoveDirection : int8_t {
 };
 
 enum CastlingRights : uint8_t {
-  WHITE_CASTLE_KING = 1,
-  WHITE_CASTLE_QUEEN = 2,
-  BLACK_CASTLE_KING = 4,
-  BLACK_CASTLE_QUEEN = 8,
+  NO_CASTLING = 0,
+  W_CASTLE_KING = 1 << 0,
+  W_CASTLE_QUEEN = 1 << 1,
+  B_CASTLE_KING = 1 << 2,
+  B_CASTLE_QUEEN = 1 << 3,
 
-  ANY_CASTLING = WHITE_CASTLE_KING | WHITE_CASTLE_QUEEN | BLACK_CASTLE_KING | BLACK_CASTLE_QUEEN
+  W_ANY_CASTLING = W_CASTLE_KING | W_CASTLE_QUEEN,
+  B_ANY_CASTLING = B_CASTLE_KING | B_CASTLE_QUEEN,
+  ANY_CASTLING_KING = W_CASTLE_KING | B_CASTLE_KING,
+  ANY_CASTLING_QUEEN = W_CASTLE_QUEEN | B_CASTLE_QUEEN,
+
+  ANY_CASTLING = W_CASTLE_KING | W_CASTLE_QUEEN | B_CASTLE_KING | B_CASTLE_QUEEN
 };
+
+constexpr CastlingRights operator~(CastlingRights a) {
+  return CastlingRights(~static_cast<uint8_t>(a));
+}
+
+constexpr CastlingRights operator|(CastlingRights a, CastlingRights b) {
+  return CastlingRights(static_cast<uint8_t>(a) | static_cast<uint8_t>(b));
+}
+
+constexpr CastlingRights operator&(CastlingRights a, CastlingRights b) {
+  return CastlingRights(static_cast<uint8_t>(a) & static_cast<uint8_t>(b));
+}
+
+constexpr CastlingRights &operator|=(CastlingRights &a, CastlingRights b) {
+  a = a | b;
+  return a;
+}
+
+constexpr CastlingRights &operator&=(CastlingRights &a, CastlingRights b) {
+  a = a & b;
+  return a;
+}
 
 enum PieceType : uint8_t {
   NO_TYPE,
@@ -61,7 +88,9 @@ enum PieceType : uint8_t {
   BISHOP,
   ROOK,
   QUEEN,
-  KING
+  KING,
+  ANY_TYPE,
+  TYPE_NB
 };
 
 enum Color : uint8_t {
@@ -70,19 +99,14 @@ enum Color : uint8_t {
   ANY_COLOR
 };
 
-struct Piece {
-  Color color;
-  PieceType type;
-
-  bool operator==(const Piece &other) const {
-    bool eq_color = color == other.color;
-    bool eq_type = type == other.type;
-
-    return eq_color && eq_type;
-  }
-
-  bool operator!=(const Piece &other) const { return !(*this == other); }
+// clang-format off
+enum Piece: uint8_t {
+  NO_PIECE = 0,
+  W_PAWN = PAWN, W_KNIGHT, W_BISHOP, W_ROOK, W_QUEEN, W_KING,
+  B_PAWN = PAWN + 8, B_KNIGHT, B_BISHOP, B_ROOK, B_QUEEN, B_KING,
+  PIECE_NB = 16
 };
+// clang-format on
 
 enum MoveType : uint8_t {
   NORMAL_MOVE = 0,
@@ -121,21 +145,12 @@ constexpr uint64_t square_to_bit(Square square) { return 1ULL << square; }
 constexpr int square_file(int sq) { return sq % 8; }
 constexpr int square_rank(int sq) { return sq / 8; }
 
-constexpr Square indexes_to_square(int rank, int file) {
-  return static_cast<Square>((rank) * 8 + (file));
-}
+constexpr Square indexes_to_square(int rank, int file) { return Square((rank) * 8 + (file)); }
 
-constexpr uint8_t encode_piece(Color color, PieceType type) { return (color << 7) | type; }
+constexpr Piece encode_piece(Color color, PieceType type) { return Piece((color << 3) + type); }
 
-constexpr Color decode_color(uint8_t code) { return static_cast<Color>(code >> 7); }
-constexpr PieceType decode_type(uint8_t code) { return static_cast<PieceType>(code & 0x7F); }
-
-constexpr Piece decode_piece(uint8_t code) {
-  Color color = decode_color(code);
-  PieceType type = decode_type(code);
-
-  return Piece{color, type};
-}
+constexpr Color decode_color(uint8_t code) { return Color(code >> 3); }
+constexpr PieceType decode_type(uint8_t code) { return PieceType(code & 7); }
 
 /**
  * @brief Get the index of the least significant bit set in a bitboard.
@@ -143,9 +158,7 @@ constexpr Piece decode_piece(uint8_t code) {
  * @param bitboard
  * @return Square
  */
-constexpr Square lsb_square(uint64_t bitboard) {
-  return static_cast<Square>(__builtin_ctzll(bitboard));
-}
+constexpr Square lsb_square(uint64_t bitboard) { return Square(__builtin_ctzll(bitboard)); }
 
 /**
  * @brief Pop the least significant bit from a bitboard and return it.
@@ -189,43 +202,10 @@ constexpr int count_bits(uint64_t bitboard) { return __builtin_popcountll(bitboa
  */
 template<MoveDirection direction>
 constexpr uint64_t move_bit(uint64_t bb, int squares) {
-  assert(bb != 0);
-  assert(count_bits(bb) == 1);
-  assert(squares > 0);
+  int src = lsb_square(bb);
+  int dst = src + static_cast<int>(direction) * squares;
 
-  uint64_t result = bb;
-  for (int i = 0; i < squares; i++) {
-    if constexpr (direction == NORTH) {
-      assert((result & RANK_8) == 0);
-      result <<= 8;
-      continue;
-    }
-
-    if constexpr (direction == SOUTH) {
-      assert((result & RANK_1) == 0);
-      result >>= 8;
-      continue;
-    }
-
-    if constexpr (direction == EAST) {
-      assert((result & FILE_H) == 0);
-      result <<= 1;
-      continue;
-    }
-
-    if constexpr (direction == WEST) {
-      assert((result & FILE_A) == 0);
-      result >>= 1;
-      continue;
-    }
-
-    static_assert(
-        direction == NORTH || direction == SOUTH || direction == EAST || direction == WEST,
-        "Invalid direction"
-    );
-  }
-
-  return result;
+  return 1ULL << dst;
 }
 
 /**
@@ -242,6 +222,7 @@ constexpr uint64_t move_bit(uint64_t bb, MoveDirection direction, int squares) {
     case SOUTH: return move_bit<SOUTH>(bb, squares);
     case EAST: return move_bit<EAST>(bb, squares);
     case WEST: return move_bit<WEST>(bb, squares);
-    default: assert(false); return 0;
   }
+
+  return 0;
 }
