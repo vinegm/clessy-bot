@@ -5,7 +5,7 @@
 #include <array>
 
 constexpr std::array<std::array<uint64_t, 64>, 2> init_pawn_attacks() {
-  std::array<std::array<uint64_t, 64>, 2> pawn_attacks{}; // [PieceColor][Square]
+  std::array<std::array<uint64_t, 64>, 2> pawn_attacks{}; // [Color][Square]
   const uint64_t NOT_FILE_A = ~FILE_A;
   const uint64_t NOT_FILE_H = ~FILE_H;
 

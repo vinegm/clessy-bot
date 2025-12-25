@@ -64,7 +64,7 @@ enum PieceType : uint8_t {
   PIECE_KING
 };
 
-enum PieceColor : uint8_t {
+enum Color : uint8_t {
   WHITE,
   BLACK,
   ANY
@@ -86,7 +86,7 @@ enum BitboardIndex : uint8_t {
 };
 
 struct Piece {
-  PieceColor color;
+  Color color;
   PieceType type;
 
   bool operator==(const Piece &other) const {
@@ -130,7 +130,7 @@ struct Move {
   bool operator!=(const Move &other) const { return !(*this == other); }
 };
 
-constexpr PieceColor opposite_color(PieceColor color) { return (color == WHITE) ? BLACK : WHITE; }
+constexpr Color opposite_color(Color color) { return (color == WHITE) ? BLACK : WHITE; }
 
 constexpr uint64_t square_to_bit(Square square) { return 1ULL << square; }
 constexpr int square_file(int sq) { return sq % 8; }
@@ -147,17 +147,17 @@ constexpr Square indexes_to_square(int rank, int file) {
  * @param type
  * @return BitboardIndex
  */
-constexpr BitboardIndex bitboard_index(PieceColor color, PieceType type) {
+constexpr BitboardIndex bitboard_index(Color color, PieceType type) {
   return static_cast<BitboardIndex>((color * 6) + type - 1);
 }
 
-constexpr uint8_t encode_piece(PieceColor color, PieceType type) { return (color << 7) | type; }
+constexpr uint8_t encode_piece(Color color, PieceType type) { return (color << 7) | type; }
 
-constexpr PieceColor decode_color(uint8_t code) { return static_cast<PieceColor>(code >> 7); }
+constexpr Color decode_color(uint8_t code) { return static_cast<Color>(code >> 7); }
 constexpr PieceType decode_type(uint8_t code) { return static_cast<PieceType>(code & 0x7F); }
 
 constexpr Piece decode_piece(uint8_t code) {
-  PieceColor color = decode_color(code);
+  Color color = decode_color(code);
   PieceType type = decode_type(code);
 
   return Piece{color, type};

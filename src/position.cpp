@@ -37,7 +37,7 @@ void Position::set_fen(const std::string &fen) {
       continue;
     }
 
-    PieceColor color = isupper(piece_char) ? WHITE : BLACK;
+    Color color = isupper(piece_char) ? WHITE : BLACK;
     PieceType type;
 
     switch (toupper(piece_char)) {
@@ -106,7 +106,7 @@ std::string Position::get_fen() const {
         empty_count = 0;
       }
 
-      PieceColor color = decode_color(encoded_piece);
+      Color color = decode_color(encoded_piece);
       PieceType type = decode_type(encoded_piece);
 
       char piece_char;
@@ -171,7 +171,7 @@ Piece Position::get_piece_at(Square square) {
   uint8_t encoded_piece = lookup_table[square];
   if (encoded_piece == 0) return Piece{WHITE, PIECE_NONE};
 
-  PieceColor color = decode_color(encoded_piece);
+  Color color = decode_color(encoded_piece);
   PieceType type = decode_type(encoded_piece);
   return Piece{color, type};
 }
@@ -354,7 +354,7 @@ void Position::update_castling_rights(
   }
 }
 
-void Position::add_piece(PieceColor color, PieceType piece, Square square) {
+void Position::add_piece(Color color, PieceType piece, Square square) {
   uint64_t square_bit = square_to_bit(square);
   bitboards[bitboard_index(color, piece)] |= square_bit;
   occupancy[color] |= square_bit;
@@ -363,7 +363,7 @@ void Position::add_piece(PieceColor color, PieceType piece, Square square) {
   lookup_table[square] = encode_piece(color, piece);
 }
 
-void Position::remove_piece(PieceColor color, PieceType piece, Square square) {
+void Position::remove_piece(Color color, PieceType piece, Square square) {
   uint64_t square_bit = square_to_bit(square);
   bitboards[bitboard_index(color, piece)] &= ~square_bit;
   occupancy[color] &= ~square_bit;

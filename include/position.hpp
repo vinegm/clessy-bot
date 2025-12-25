@@ -20,9 +20,9 @@ class Position {
 public:
   Position(const std::string &fen) { set_fen(fen); }
 
-  PieceColor to_move{};
+  Color to_move{};
   uint64_t bitboards[12]{};   // [BitboardIndex]
-  uint64_t occupancy[3]{};    // [PieceColor]
+  uint64_t occupancy[3]{};    // [Color]
   uint8_t lookup_table[64]{}; // Encoded pieces
 
   uint8_t castling_rights{};
@@ -42,7 +42,7 @@ private:
   Square get_captured_square(const Move &move) const;
   void push_undo_info(const Move &move, uint8_t captured_piece_encoded);
   void update_castling_rights(const Move &move, const Piece &piece, Square captured_square);
-  void add_piece(PieceColor color, PieceType piece, Square square);
-  void remove_piece(PieceColor color, PieceType piece, Square square);
+  void add_piece(Color color, PieceType piece, Square square);
+  void remove_piece(Color color, PieceType piece, Square square);
   void pass_turn();
 };

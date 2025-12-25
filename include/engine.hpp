@@ -17,7 +17,7 @@ public:
     pos.set_fen(fen);
   }
 
-  PieceColor to_move() const { return pos.to_move; }
+  Color to_move() const { return pos.to_move; }
   Piece get_piece_at(Square square) { return pos.get_piece_at(square); }
 
   MoveList get_legal_moves() const;

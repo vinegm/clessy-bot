@@ -48,7 +48,7 @@ public:
   MoveList generate_legal_moves(const Position &position) const;
 
 private:
-  template<PieceColor Us>
+  template<Color Us>
   int generate_pawn_moves(const Position &position, Move *moves, Masks masks) const;
 
   template<PieceType PieceT>
@@ -57,10 +57,10 @@ private:
   int generate_castling_moves(const Position &position, Move *moves, Masks masks) const;
   Masks generate_masks(const Position &position) const;
 
-  bool is_square_attacked(const Position &position, Square square, PieceColor by_color) const;
-  bool is_in_check(const Position &position, PieceColor color) const;
+  bool is_square_attacked(const Position &position, Square square, Color by_color) const;
+  bool is_in_check(const Position &position, Color color) const;
   bool is_legal_move(Position &position, const Move &move) const;
-  Square find_king(const Position &position, PieceColor color) const;
+  Square find_king(const Position &position, Color color) const;
 
   const std::array<std::array<uint64_t, 64>, 2> PAWN_ATTACKS = init_pawn_attacks();
   const std::array<uint64_t, 64> KNIGHT_ATTACKS = init_knight_attacks();

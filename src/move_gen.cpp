@@ -43,13 +43,13 @@ MoveList MoveGenerator::generate_legal_moves(const Position &position) const {
   return legal_moves;
 }
 
-template<PieceColor Us>
+template<Color Us>
 int MoveGenerator::generate_pawn_moves(const Position &position, Move *moves, Masks masks) const {
   int num_checks = count_bits(masks.checkers);
   if (num_checks > 2) return 0;
 
   Move *start = moves;
-  constexpr PieceColor Them = (Us == WHITE) ? BLACK : WHITE;
+  constexpr Color Them = (Us == WHITE) ? BLACK : WHITE;
   constexpr int Forward = (Us == WHITE) ? NORTH : SOUTH;
   constexpr uint64_t StartingRank = (Us == WHITE) ? RANK_2 : RANK_7;
   constexpr uint64_t PromotionRank = (Us == WHITE) ? RANK_8 : RANK_1;
@@ -142,8 +142,8 @@ int MoveGenerator::generate_piece_moves(const Position &position, Move *moves, M
   if (num_checks > 2) return 0;
 
   Move *start = moves;
-  const PieceColor us = position.to_move;
-  const PieceColor them = opposite_color(us);
+  const Color us = position.to_move;
+  const Color them = opposite_color(us);
 
   uint64_t our_pieces_bb = position.bitboards[bitboard_index(us, PieceT)];
   const uint64_t our_occupancy = position.occupancy[us];
@@ -188,8 +188,8 @@ int MoveGenerator::generate_castling_moves(
     Masks masks
 ) const {
   Move *start = moves;
-  const PieceColor us = position.to_move;
-  const PieceColor them = opposite_color(us);
+  const Color us = position.to_move;
+  const Color them = opposite_color(us);
 
   if (position.castling_rights == 0) return 0;
   if (masks.checkers) return 0;
@@ -232,8 +232,8 @@ int MoveGenerator::generate_castling_moves(
 }
 
 Masks MoveGenerator::generate_masks(const Position &position) const {
-  const PieceColor us = position.to_move;
-  const PieceColor them = opposite_color(us);
+  const Color us = position.to_move;
+  const Color them = opposite_color(us);
   const uint64_t our_king_bb = position.bitboards[bitboard_index(us, PIECE_KING)];
   const Square king_square = static_cast<Square>(lsb_index(our_king_bb));
   Masks masks;
@@ -281,7 +281,7 @@ Masks MoveGenerator::generate_masks(const Position &position) const {
 bool MoveGenerator::is_square_attacked(
     const Position &position,
     Square square,
-    PieceColor enemy_color
+    Color enemy_color
 ) const {
   const uint64_t all_pieces = position.occupancy[ANY];
 
@@ -315,13 +315,13 @@ bool MoveGenerator::is_square_attacked(
   return false;
 }
 
-bool MoveGenerator::is_in_check(const Position &position, PieceColor color) const {
+bool MoveGenerator::is_in_check(const Position &position, Color color) const {
   Square king_square = find_king(position, color);
   return is_square_attacked(position, king_square, opposite_color(color));
 }
 
 bool MoveGenerator::is_legal_move(Position &position, const Move &move) const {
-  PieceColor original_to_move = position.to_move;
+  Color original_to_move = position.to_move;
 
   position.make_move(move);
   bool check_res = is_in_check(position, original_to_move);
@@ -330,7 +330,7 @@ bool MoveGenerator::is_legal_move(Position &position, const Move &move) const {
   return !check_res;
 }
 
-Square MoveGenerator::find_king(const Position &position, PieceColor color) const {
+Square MoveGenerator::find_king(const Position &position, Color color) const {
   const uint64_t king = position.bitboards[bitboard_index(color, PIECE_KING)];
   return static_cast<Square>(lsb_index(king));
 }
