@@ -55,34 +55,19 @@ enum CastlingRights : uint8_t {
 };
 
 enum PieceType : uint8_t {
-  PIECE_NONE,
-  PIECE_PAWN,
-  PIECE_KNIGHT,
-  PIECE_BISHOP,
-  PIECE_ROOK,
-  PIECE_QUEEN,
-  PIECE_KING
+  NO_TYPE,
+  PAWN,
+  KNIGHT,
+  BISHOP,
+  ROOK,
+  QUEEN,
+  KING
 };
 
 enum Color : uint8_t {
   WHITE,
   BLACK,
-  ANY
-};
-
-enum BitboardIndex : uint8_t {
-  WHITE_PAWN,
-  WHITE_KNIGHT,
-  WHITE_BISHOP,
-  WHITE_ROOK,
-  WHITE_QUEEN,
-  WHITE_KING,
-  BLACK_PAWN,
-  BLACK_KNIGHT,
-  BLACK_BISHOP,
-  BLACK_ROOK,
-  BLACK_QUEEN,
-  BLACK_KING
+  ANY_COLOR
 };
 
 struct Piece {
@@ -111,7 +96,7 @@ struct Move {
   Square from;
   Square to;
   MoveType type = NORMAL_MOVE;
-  PieceType promotion_piece = PIECE_NONE;
+  PieceType promotion_piece = NO_TYPE;
 
   bool is_capture() const { return (type & (CAPTURE | EN_PASSANT)) != 0; }
   bool is_promotion() const { return (type & PROMOTION) != 0; }
@@ -140,17 +125,6 @@ constexpr Square indexes_to_square(int rank, int file) {
   return static_cast<Square>((rank) * 8 + (file));
 }
 
-/**
- * @brief Get the index for the bitboard corresponding to a piece color and type.
- *
- * @param color
- * @param type
- * @return BitboardIndex
- */
-constexpr BitboardIndex bitboard_index(Color color, PieceType type) {
-  return static_cast<BitboardIndex>((color * 6) + type - 1);
-}
-
 constexpr uint8_t encode_piece(Color color, PieceType type) { return (color << 7) | type; }
 
 constexpr Color decode_color(uint8_t code) { return static_cast<Color>(code >> 7); }
@@ -167,9 +141,11 @@ constexpr Piece decode_piece(uint8_t code) {
  * @brief Get the index of the least significant bit set in a bitboard.
  *
  * @param bitboard
- * @return int
+ * @return Square
  */
-constexpr int lsb_index(uint64_t bitboard) { return __builtin_ctzll(bitboard); }
+constexpr Square lsb_square(uint64_t bitboard) {
+  return static_cast<Square>(__builtin_ctzll(bitboard));
+}
 
 /**
  * @brief Pop the least significant bit from a bitboard and return it.
@@ -187,11 +163,11 @@ constexpr uint64_t pop_lsb(uint64_t &bitboard) {
  * @brief Pop the least significant bit from a bitboard and return its index.
  *
  * @param bitboard
- * @return int
+ * @return Square
  */
-constexpr int pop_lsb_index(uint64_t &bitboard) {
-  int index = lsb_index(bitboard);
-  bitboard &= bitboard - 1;
+constexpr Square pop_lsb_square(uint64_t &bitboard) {
+  Square index = lsb_square(bitboard);
+  pop_lsb(bitboard);
   return index;
 }
 

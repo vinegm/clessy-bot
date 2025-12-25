@@ -21,7 +21,6 @@ public:
   Position(const std::string &fen) { set_fen(fen); }
 
   Color to_move{};
-  uint64_t bitboards[12]{};   // [BitboardIndex]
   uint64_t occupancy[3]{};    // [Color]
   uint8_t lookup_table[64]{}; // Encoded pieces
 
@@ -29,6 +28,14 @@ public:
   std::optional<Square> en_passant_square{};
   int halfmove_clock{};
   int fullmove_counter{};
+
+  constexpr int get_bb_idx(Color color, PieceType type) const { return (color * 6) + type - 1; }
+  constexpr uint64_t get_bb(Color color, PieceType type) const {
+    return bitboards[get_bb_idx(color, type)];
+  }
+  constexpr uint64_t &get_bb_ref(Color color, PieceType type) {
+    return bitboards[get_bb_idx(color, type)];
+  }
 
   void set_fen(const std::string &fen);
   std::string get_fen() const;
@@ -38,6 +45,7 @@ public:
 
 private:
   std::vector<UndoInfo> undo_stack{};
+  uint64_t bitboards[12]{};
 
   Square get_captured_square(const Move &move) const;
   void push_undo_info(const Move &move, uint8_t captured_piece_encoded);

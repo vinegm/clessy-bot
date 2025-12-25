@@ -13,7 +13,7 @@ void Position::set_fen(const std::string &fen) {
   }
   occupancy[WHITE] = 0;
   occupancy[BLACK] = 0;
-  occupancy[ANY] = 0;
+  occupancy[ANY_COLOR] = 0;
   castling_rights = 0;
   undo_stack.clear();
 
@@ -41,16 +41,16 @@ void Position::set_fen(const std::string &fen) {
     PieceType type;
 
     switch (toupper(piece_char)) {
-      case 'P': type = PIECE_PAWN; break;
-      case 'R': type = PIECE_ROOK; break;
-      case 'N': type = PIECE_KNIGHT; break;
-      case 'B': type = PIECE_BISHOP; break;
-      case 'Q': type = PIECE_QUEEN; break;
-      case 'K': type = PIECE_KING; break;
-      default: type = PIECE_NONE; break;
+      case 'P': type = PAWN; break;
+      case 'R': type = ROOK; break;
+      case 'N': type = KNIGHT; break;
+      case 'B': type = BISHOP; break;
+      case 'Q': type = QUEEN; break;
+      case 'K': type = KING; break;
+      default: type = NO_TYPE; break;
     }
 
-    if (type != PIECE_NONE) add_piece(color, type, indexes_to_square(rank, file));
+    if (type != NO_TYPE) add_piece(color, type, indexes_to_square(rank, file));
 
     file++;
   }
@@ -111,12 +111,12 @@ std::string Position::get_fen() const {
 
       char piece_char;
       switch (type) {
-        case PIECE_PAWN: piece_char = 'P'; break;
-        case PIECE_ROOK: piece_char = 'R'; break;
-        case PIECE_KNIGHT: piece_char = 'N'; break;
-        case PIECE_BISHOP: piece_char = 'B'; break;
-        case PIECE_QUEEN: piece_char = 'Q'; break;
-        case PIECE_KING: piece_char = 'K'; break;
+        case PAWN: piece_char = 'P'; break;
+        case ROOK: piece_char = 'R'; break;
+        case KNIGHT: piece_char = 'N'; break;
+        case BISHOP: piece_char = 'B'; break;
+        case QUEEN: piece_char = 'Q'; break;
+        case KING: piece_char = 'K'; break;
         default: continue;
       }
 
@@ -169,7 +169,7 @@ std::string Position::get_fen() const {
 
 Piece Position::get_piece_at(Square square) {
   uint8_t encoded_piece = lookup_table[square];
-  if (encoded_piece == 0) return Piece{WHITE, PIECE_NONE};
+  if (encoded_piece == 0) return Piece{WHITE, NO_TYPE};
 
   Color color = decode_color(encoded_piece);
   PieceType type = decode_type(encoded_piece);
@@ -193,13 +193,13 @@ void Position::make_move(const Move &move) {
   if (castling_rights != 0) update_castling_rights(move, piece, captured_square);
 
   en_passant_square.reset();
-  if (piece.type == PIECE_PAWN || move.is_capture()) {
+  if (piece.type == PAWN || move.is_capture()) {
     halfmove_clock = 0;
   } else {
     halfmove_clock++;
   }
 
-  if (piece.type == PIECE_PAWN) {
+  if (piece.type == PAWN) {
     if (abs(square_rank(move.to) - square_rank(move.from)) == 2) {
       int to_file = square_file(move.to);
       int from_rank = square_rank(move.from);
@@ -255,12 +255,12 @@ void Position::undo_move() {
   remove_piece(moved_piece.color, moved_piece.type, to);
 
   if (move.is_promotion()) {
-    add_piece(moved_piece.color, PIECE_PAWN, from);
+    add_piece(moved_piece.color, PAWN, from);
   } else {
     add_piece(moved_piece.color, moved_piece.type, from);
   }
 
-  if (captured_piece.type != PIECE_NONE)
+  if (captured_piece.type != NO_TYPE)
     add_piece(captured_piece.color, captured_piece.type, captured_square);
 
   if (move.is_castling()) {
@@ -316,7 +316,7 @@ void Position::update_castling_rights(
     const Piece &piece,
     Square captured_square
 ) {
-  if (piece.type == PIECE_KING) {
+  if (piece.type == KING) {
     if (piece.color == WHITE) {
       castling_rights &= ~(WHITE_CASTLE_KING | WHITE_CASTLE_QUEEN);
     } else {
@@ -325,7 +325,7 @@ void Position::update_castling_rights(
     return;
   }
 
-  if (piece.type == PIECE_ROOK) {
+  if (piece.type == ROOK) {
     if (piece.color == WHITE) {
       if (move.from == H1) {
         castling_rights &= ~WHITE_CASTLE_KING;
@@ -356,18 +356,18 @@ void Position::update_castling_rights(
 
 void Position::add_piece(Color color, PieceType piece, Square square) {
   uint64_t square_bit = square_to_bit(square);
-  bitboards[bitboard_index(color, piece)] |= square_bit;
+  get_bb_ref(color, piece) |= square_bit;
   occupancy[color] |= square_bit;
-  occupancy[ANY] |= square_bit;
+  occupancy[ANY_COLOR] |= square_bit;
 
   lookup_table[square] = encode_piece(color, piece);
 }
 
 void Position::remove_piece(Color color, PieceType piece, Square square) {
   uint64_t square_bit = square_to_bit(square);
-  bitboards[bitboard_index(color, piece)] &= ~square_bit;
+  get_bb_ref(color, piece) &= ~square_bit;
   occupancy[color] &= ~square_bit;
-  occupancy[ANY] &= ~square_bit;
+  occupancy[ANY_COLOR] &= ~square_bit;
 
   lookup_table[square] = 0;
 }

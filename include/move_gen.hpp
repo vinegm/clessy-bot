@@ -17,7 +17,7 @@ struct MoveList {
       Square from,
       Square to,
       MoveType type = NORMAL_MOVE,
-      PieceType promotion = PIECE_NONE
+      PieceType promotion = NO_TYPE
   ) {
     moves[count++] = {from, to, type, promotion};
   }

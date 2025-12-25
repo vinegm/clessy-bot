@@ -53,21 +53,21 @@ std::string move_to_uci(const Move &move) {
 
 char piece_type_to_char(PieceType type) {
   switch (type) {
-    case PIECE_QUEEN: return 'q';
-    case PIECE_ROOK: return 'r';
-    case PIECE_BISHOP: return 'b';
-    case PIECE_KNIGHT: return 'n';
+    case QUEEN: return 'q';
+    case ROOK: return 'r';
+    case BISHOP: return 'b';
+    case KNIGHT: return 'n';
     default: return 'q';
   }
 }
 
 PieceType char_to_piece_type(char c) {
   switch (std::tolower(c)) {
-    case 'q': return PIECE_QUEEN;
-    case 'r': return PIECE_ROOK;
-    case 'b': return PIECE_BISHOP;
-    case 'n': return PIECE_KNIGHT;
-    default: return PIECE_QUEEN;
+    case 'q': return QUEEN;
+    case 'r': return ROOK;
+    case 'b': return BISHOP;
+    case 'n': return KNIGHT;
+    default: return QUEEN;
   }
 }
 
@@ -81,7 +81,7 @@ Move uci_to_move(const std::string &uci) {
   move.from = from;
   move.to = to;
   move.type = NORMAL_MOVE;
-  move.promotion_piece = PIECE_NONE;
+  move.promotion_piece = NO_TYPE;
 
   // Check for promotion
   if (uci.length() == 5) {
