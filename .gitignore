@@ -57,3 +57,4 @@ build/
 
 # Cache
 .cache/
+*/__pycache__/
