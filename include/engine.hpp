@@ -5,7 +5,6 @@
 #include "move_gen.hpp"
 #include "position.hpp"
 #include "search.hpp"
-#include "thread_pool.hpp"
 
 #include <string>
 

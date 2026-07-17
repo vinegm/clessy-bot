@@ -21,9 +21,6 @@ void Position::set_fen(const std::string &fen) {
   undo_stack.clear();
   hash = 0;
 
-  // The board is cleared below without going through remove_piece, so anything
-  // the accumulator still holds describes the previous position. Drop it
-  // before the first add_piece rather than adding the new pieces on top.
   accumulator().generation = 0;
 
   std::istringstream fen_stream(fen);
@@ -93,8 +90,6 @@ void Position::set_fen(const std::string &fen) {
   halfmove_clock = halfmove_str.empty() ? 0 : std::stoi(halfmove_str);
   fullmove_counter = fullmove_str.empty() ? 1 : std::stoi(fullmove_str);
 
-  // The piece keys were folded in by add_piece; the rest of the state is only
-  // known now that the whole FEN has been read.
   if (to_move == BLACK) hash ^= ZOBRIST_KEYS.side_to_move;
   hash ^= ZOBRIST_KEYS.castling[castling_rights];
   hash ^= en_passant_key(en_passant_square);
@@ -182,8 +177,6 @@ std::string Position::get_fen() const {
   return fen;
 }
 
-Piece Position::get_piece_at(Square square) { return lookup_table[square]; }
-
 void Position::make_move(const Move &move) {
   const uint64_t hash_before = hash;
 
@@ -260,8 +253,6 @@ void Position::make_move(const Move &move) {
 void Position::make_null_move() {
   push_undo_info(Move{}, NO_PIECE, hash);
 
-  // The right to capture en passant does not survive the opponent declining
-  // to move, so it leaves the hash along with the square.
   hash ^= en_passant_key(en_passant_square);
   en_passant_square.reset();
 
@@ -386,13 +377,6 @@ void Position::update_castling_rights(const Move &move, Square captured_square) 
   }
 }
 
-// These two are the only places the board changes, which is what makes them
-// the whole of the NNUE incremental update: make_move, undo_move and set_fen
-// all express castling, promotion, en passant and captures as add/remove
-// pairs, so keeping the accumulator in step here keeps it in step everywhere.
-//
-// An uncomputed accumulator is left alone rather than started, so a perft that
-// never evaluates pays one predictable branch per piece touched.
 void Position::add_piece(Color color, PieceType piece, Square square) {
   uint64_t square_bit = square_to_bit(square);
   get_bb_ref(color, piece) |= square_bit;
