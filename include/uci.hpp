@@ -26,6 +26,7 @@ private:
   void handle_position(const std::vector<std::string> &tokens);
   void handle_go(const std::vector<std::string> &tokens);
   void handle_d();
+  void handle_eval();
 
   // Board character for a piece: uppercase White, lowercase Black, a
   // space for an empty square, which is the convention the FEN uses.

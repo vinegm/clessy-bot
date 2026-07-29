@@ -48,6 +48,7 @@ void ClessUCI::call_command(const std::vector<std::string> &leading_tokens) {
   if (command == "position") return handle_position(tokens);
   if (command == "go") return handle_go(tokens);
   if (command == "d") return handle_d();
+  if (command == "eval") return handle_eval();
   if (command == "quit" || command == "exit") {
     quitting = true;
     return;
@@ -188,6 +189,8 @@ void ClessUCI::handle_d() {
   Logger::respond("Legal moves (", legal_moves.count, "): ", moves_str);
 }
 
+void ClessUCI::handle_eval() { Logger::respond("Eval (stm, cp): ", engine.evaluate()); }
+
 bool ClessUCI::resolve_move(const std::string &uci, Move &move) const {
   Move parsed;
   try {
@@ -236,5 +239,5 @@ char ClessUCI::piece_to_char(Piece piece) {
 bool ClessUCI::is_command(const std::string &token) {
   return token == "uci" || token == "debug" || token == "isready" || token == "setoption"
          || token == "register" || token == "ucinewgame" || token == "position" || token == "go"
-         || token == "quit" || token == "exit" || token == "d";
+         || token == "quit" || token == "exit" || token == "d" || token == "eval";
 }

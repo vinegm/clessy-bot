@@ -1,6 +1,7 @@
 #pragma once
 
 #include "chess_types.hpp"
+#include "eval.hpp"
 #include "move_gen.hpp"
 #include "position.hpp"
 
@@ -25,6 +26,8 @@ public:
   MoveList get_legal_moves_from(Square square) const;
 
   bool in_check() const { return generator.is_in_check(pos, pos.to_move); }
+
+  int evaluate() const { return evaluate_hce(pos); }
 
   void make_move(const Move &move);
   void undo_move();
