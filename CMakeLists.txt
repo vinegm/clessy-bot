@@ -22,4 +22,5 @@ find_package(Threads REQUIRED)
 
 add_executable(clessy ${SOURCES})
 target_include_directories(clessy PRIVATE ${PROJECT_SOURCE_DIR}/include)
+target_compile_options(clessy PRIVATE -O3 -march=native)
 target_link_libraries(clessy PRIVATE Threads::Threads)

@@ -4,6 +4,11 @@
 
 #include <array>
 #include <cassert>
+#include <cstdint>
+
+#ifdef __BMI2__
+#include <immintrin.h>
+#endif
 
 constexpr std::array<std::array<uint64_t, 64>, 2> init_pawn_attacks() {
   std::array<std::array<uint64_t, 64>, 2> pawn_attacks{}; // [Color][Square]
@@ -91,10 +96,45 @@ constexpr std::array<CastlingRights, 64> init_castling_masks() {
   return castling_masks;
 }
 
-uint64_t get_rook_attacks(int square, uint64_t occupancy);
-uint64_t get_bishop_attacks(int square, uint64_t occupancy);
-
 constexpr const auto PAWN_ATTACKS = init_pawn_attacks();
 constexpr const auto KNIGHT_ATTACKS = init_knight_attacks();
 constexpr const auto KING_ATTACKS = init_king_attacks();
 constexpr const auto CASTLING_MASKS = init_castling_masks();
+
+// -------------------- Sliding pieces --------------------
+// NOTE: uses magic bitboards to compute attacks for sliding pieces (rooks and bishops).
+// uses PEXT instruction if available, otherwise uses magic multiplication and shift.
+
+struct MagicEntry {
+  uint64_t mask;
+#ifndef __BMI2__
+  uint64_t magic;
+  int shift;
+#endif
+  uint64_t *attacks;
+};
+
+extern MagicEntry rook_magics[64];
+extern MagicEntry bishop_magics[64];
+
+void init_attack_tables();
+
+inline uint64_t get_rook_attacks(int square, uint64_t occupancy) {
+#ifdef __BMI2__
+  const MagicEntry &magic = rook_magics[square];
+  return magic.attacks[_pext_u64(occupancy, magic.mask)];
+#else
+  const MagicEntry &magic = rook_magics[square];
+  return magic.attacks[((occupancy & magic.mask) * magic.magic) >> magic.shift];
+#endif
+}
+
+inline uint64_t get_bishop_attacks(int square, uint64_t occupancy) {
+#ifdef __BMI2__
+  const MagicEntry &magic = bishop_magics[square];
+  return magic.attacks[_pext_u64(occupancy, magic.mask)];
+#else
+  const MagicEntry &magic = bishop_magics[square];
+  return magic.attacks[((occupancy & magic.mask) * magic.magic) >> magic.shift];
+#endif
+}
