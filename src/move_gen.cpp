@@ -8,25 +8,11 @@
 
 MoveList MoveGenerator::generate_pseudo_legal_moves(const Position &position) const {
   MoveList move_list;
-  Move *moves = move_list.moves;
-  Move *start = moves;
+  const Masks masks = generate_masks(position);
 
-  Masks masks = generate_masks(position);
+  move_list.count = generate_moves(position, move_list.moves, masks, ~0ULL);
+  move_list.count += generate_castling_moves(position, move_list.end(), masks);
 
-  if (position.to_move == WHITE) {
-    moves += generate_pawn_moves<WHITE>(position, moves, masks);
-  } else {
-    moves += generate_pawn_moves<BLACK>(position, moves, masks);
-  }
-
-  moves += generate_piece_moves<KNIGHT>(position, moves, masks);
-  moves += generate_piece_moves<BISHOP>(position, moves, masks);
-  moves += generate_piece_moves<ROOK>(position, moves, masks);
-  moves += generate_piece_moves<QUEEN>(position, moves, masks);
-  moves += generate_piece_moves<KING>(position, moves, masks);
-  moves += generate_castling_moves(position, moves, masks);
-
-  move_list.count = moves - start;
   return move_list;
 }
 
@@ -34,6 +20,42 @@ MoveList MoveGenerator::generate_legal_moves(const Position &position) const {
   // The masks already keep every other move legal, so the only ones still
   // worth playing out are the en passant captures.
   return filter_en_passant_legality(position, generate_pseudo_legal_moves(position));
+}
+
+MoveList MoveGenerator::generate_legal_captures(const Position &position) const {
+  MoveList move_list;
+  const Masks masks = generate_masks(position);
+
+  // Pawns keep their promotions and their en passant captures on top of this,
+  // see generate_pawn_moves; castling is never a capture.
+  const uint64_t targets = position.occupancy[opposite_color(position.to_move)];
+
+  move_list.count = generate_moves(position, move_list.moves, masks, targets);
+
+  return filter_en_passant_legality(position, move_list);
+}
+
+int MoveGenerator::generate_moves(
+    const Position &position,
+    Move *moves,
+    const Masks &masks,
+    uint64_t targets
+) const {
+  Move *start = moves;
+
+  if (position.to_move == WHITE) {
+    moves += generate_pawn_moves<WHITE>(position, moves, masks, targets);
+  } else {
+    moves += generate_pawn_moves<BLACK>(position, moves, masks, targets);
+  }
+
+  moves += generate_piece_moves<KNIGHT>(position, moves, masks, targets);
+  moves += generate_piece_moves<BISHOP>(position, moves, masks, targets);
+  moves += generate_piece_moves<ROOK>(position, moves, masks, targets);
+  moves += generate_piece_moves<QUEEN>(position, moves, masks, targets);
+  moves += generate_piece_moves<KING>(position, moves, masks, targets);
+
+  return moves - start;
 }
 
 MoveList MoveGenerator::filter_en_passant_legality(
@@ -60,7 +82,8 @@ template<Color Us>
 int MoveGenerator::generate_pawn_moves(
     const Position &position,
     Move *moves,
-    const Masks &masks
+    const Masks &masks,
+    uint64_t targets
 ) const {
   const int num_checks = count_bits(masks.checkers);
   if (num_checks >= 2) return 0; // double check, only the king may move
@@ -75,13 +98,15 @@ int MoveGenerator::generate_pawn_moves(
   const uint64_t enemy_pieces = position.occupancy[Them];
   const uint64_t empty_squares = ~position.occupancy[ANY_COLOR];
 
-  // Single pushes
+  // Single pushes. A promotion push survives a targets mask that excludes
+  // empty squares, so capture generation keeps the promotions.
   uint64_t single_pushes;
   if constexpr (Us == WHITE) {
     single_pushes = (our_pawns << NORTH) & empty_squares;
   } else {
     single_pushes = (our_pawns >> (-SOUTH)) & empty_squares;
   }
+  single_pushes &= targets | PromotionRank;
 
   while (single_pushes) {
     const Square to = pop_lsb_square(single_pushes);
@@ -112,6 +137,7 @@ int MoveGenerator::generate_pawn_moves(
         ((our_pawns & StartingRank) >> (-SOUTH)) & empty_squares;
     double_pushes = (single_push_from_start >> (-SOUTH)) & empty_squares;
   }
+  double_pushes &= targets;
 
   while (double_pushes) {
     const Square to = pop_lsb_square(double_pushes);
@@ -128,7 +154,7 @@ int MoveGenerator::generate_pawn_moves(
   uint64_t pawns_copy = our_pawns;
   while (pawns_copy) {
     const Square from = pop_lsb_square(pawns_copy);
-    uint64_t attacks = PAWN_ATTACKS[Us][from] & enemy_pieces;
+    uint64_t attacks = PAWN_ATTACKS[Us][from] & enemy_pieces & targets;
 
     if (masks.pinned_pieces & square_to_bit(from)) attacks &= masks.pin_rays[from];
     if (num_checks == 1) attacks &= masks.check_mask | masks.checkers;
@@ -148,7 +174,9 @@ int MoveGenerator::generate_pawn_moves(
     }
   }
 
-  // En passant captures, legality left to filter_en_passant_legality
+  // En passant captures, legality left to filter_en_passant_legality. The
+  // square they land on is empty, so targets never carries it: no other piece
+  // can capture onto it and no pawn can push onto it either.
   if (position.en_passant_square.has_value()) {
     const Square en_passant_square = position.en_passant_square.value();
     pawns_copy = our_pawns;
@@ -168,7 +196,8 @@ template<PieceType PieceT>
 int MoveGenerator::generate_piece_moves(
     const Position &position,
     Move *moves,
-    const Masks &masks
+    const Masks &masks,
+    uint64_t targets
 ) const {
   const int num_checks = count_bits(masks.checkers);
   if (num_checks >= 2 && PieceT != KING) return 0;
@@ -198,7 +227,7 @@ int MoveGenerator::generate_piece_moves(
       attacks = KING_ATTACKS[from] & ~masks.enemy_attacks;
     }
 
-    attacks &= ~our_occupancy;
+    attacks &= ~our_occupancy & targets;
 
     if constexpr (PieceT != KING) {
       if (masks.pinned_pieces & square_to_bit(from)) attacks &= masks.pin_rays[from];
