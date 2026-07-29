@@ -18,6 +18,9 @@ public:
 private:
   ClessEngine engine;
 
+  // Options, read on the search thread only while it is being started.
+  int multipv = 1;
+
   std::thread search_thread;
   SearchControl control;
 
@@ -66,6 +69,10 @@ private:
   // Whether a token names a command, so junk before one can be
   // skipped the way the spec asks.
   static bool is_command(const std::string &token);
+
+  // Whether a token ends a "searchmoves" list. Anything else in one
+  // is a move.
+  static bool is_go_keyword(const std::string &token);
 
   // Resolve a UCI move string against the current legal moves, which
   // is the only way to recover the flags the engine's Move carries.

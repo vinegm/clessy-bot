@@ -177,10 +177,27 @@ void ClessUCI::parse_go_limits(
       continue;
     }
 
+    if (token == "searchmoves") {
+      for (i++; i < tokens.size() && !is_go_keyword(tokens[i]); i++) {
+        Move move;
+        if (resolve_move(tokens[i], move)) {
+          limits.searchmoves.push_back(move);
+          continue;
+        }
+
+        Logger::warn("go searchmoves: '", tokens[i], "' is not legal here, ignoring it");
+      }
+
+      // The loop's own increment must not step past the keyword we stopped on.
+      i--;
+      continue;
+    }
+
     if (i + 1 >= tokens.size()) continue;
 
     if (token == "depth") limits.depth = std::stoi(tokens[i + 1]);
     if (token == "nodes") limits.nodes = std::stoll(tokens[i + 1]);
+    if (token == "mate") limits.mate = std::stoi(tokens[i + 1]);
     if (token == "movetime") limits.movetime = std::stoll(tokens[i + 1]);
     if (token == "movestogo") limits.movestogo = std::stoi(tokens[i + 1]);
     if (token == "wtime") limits.wtime = std::stoll(tokens[i + 1]);
@@ -200,13 +217,15 @@ void ClessUCI::handle_go(const std::vector<std::string> &tokens) {
   if (engine.get_legal_moves().empty()) return Logger::respond("bestmove (none)");
 
   SearchLimits limits;
+  limits.multipv = multipv;
 
   bool ponder = false;
   parse_go_limits(tokens, limits, ponder);
 
   // A bare "go" bounds nothing, which the spec defines as searching until
   // "stop". A ponder search is already open-ended in the same way.
-  bool bounded = limits.has_clock() || limits.nodes >= 0 || limits.depth != MAX_SEARCH_DEPTH;
+  bool bounded = limits.has_clock() || limits.nodes >= 0 || limits.mate > 0
+                 || limits.depth != MAX_SEARCH_DEPTH;
   if (!bounded && !ponder) limits.infinite = true;
 
   start_search(limits, ponder);
@@ -293,11 +312,13 @@ void ClessUCI::stop_search() {
 void ClessUCI::send_iteration_info(const SearchResult &result) {
   int64_t nps = (result.elapsed_ms > 0) ? result.nodes * 1000 / result.elapsed_ms : 0;
 
-  std::string info = Logger::format(
-      "info depth ",
-      result.depth,
-      " seldepth ",
-      result.seldepth,
+  std::string info = Logger::format("info depth ", result.depth, " seldepth ", result.seldepth);
+
+  // Only meaningful when more than one line is asked for, and GUIs that never
+  // set MultiPV do not expect the field.
+  if (multipv > 1) info += Logger::format(" multipv ", result.multipv);
+
+  info += Logger::format(
       " score ",
       score_to_uci(result.score),
       " nodes ",
@@ -422,6 +443,13 @@ char ClessUCI::piece_to_char(Piece piece) {
   if (decode_color(piece) == WHITE) symbol = static_cast<char>(std::toupper(symbol));
 
   return symbol;
+}
+
+bool ClessUCI::is_go_keyword(const std::string &token) {
+  return token == "searchmoves" || token == "ponder" || token == "wtime" || token == "btime"
+         || token == "winc" || token == "binc" || token == "movestogo" || token == "depth"
+         || token == "nodes" || token == "mate" || token == "movetime" || token == "infinite"
+         || token == "perft";
 }
 
 bool ClessUCI::is_command(const std::string &token) {

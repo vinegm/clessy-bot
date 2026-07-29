@@ -41,8 +41,18 @@ struct SearchLimits {
   // Moves left in the current time control period; 0 means sudden death.
   int movestogo = 0;
 
+  // "go mate x": look for a mate in x moves. 0 means not asked for.
+  int mate = 0;
+
   // "go infinite": search until stopped, whatever the clock says.
   bool infinite = false;
+
+  // Root moves the GUI restricted the search to. Empty means all of them.
+  std::vector<Move> searchmoves;
+
+  // Lines to report. Above 1 the search costs roughly one extra root pass per
+  // line, so this is a UCI convenience rather than a strength feature.
+  int multipv = 1;
 
   // Milliseconds held back from every time budget to cover the delay between
   // the engine deciding and the GUI receiving it.
@@ -74,6 +84,9 @@ struct SearchResult {
   // Deepest ply reached anywhere, quiescence included. Always at least depth.
   int seldepth = 0;
 
+  // 1-based index of this line among the MultiPV lines; 1 is the best line.
+  int multipv = 1;
+
   uint64_t nodes = 0;
   int64_t elapsed_ms = 0;
 
@@ -83,7 +96,8 @@ struct SearchResult {
   std::vector<Move> pv;
 };
 
-// Called after each completed iteration of iterative deepening.
+// Called once per reported line after each completed iteration of iterative
+// deepening. With MultiPV above 1 it fires once per line, best line first.
 using SearchInfoCallback = std::function<void(const SearchResult &)>;
 
 /**
@@ -96,8 +110,8 @@ using SearchInfoCallback = std::function<void(const SearchResult &)>;
  * pondering flag clears. The position is restored before returning.
  *
  * @param pos The position to search
- * @param limits Depth and clock limits
- * @param on_iteration Optional callback fired for each completed iteration
+ * @param limits Depth, clock and root-move limits
+ * @param on_iteration Optional callback fired for each reported line
  * @param control Optional stop/ponder handle owned by the caller
  * @return Best line of the last completed iteration
  */
