@@ -30,11 +30,13 @@ struct MoveList {
 
 struct Masks {
   uint64_t enemy_attacks = 0;
-  uint64_t check_mask = 0;
-  uint64_t checkers = 0;
+  uint64_t check_mask = 0; // squares between the king and a checking slider
+  uint64_t checkers = 0;   // squares of the pieces giving check
 
-  // TODO: implement missing masks
+  // Where a piece that is pinned may still go, capturing the pinner included.
+  // Only the squares set in pinned_pieces carry a meaningful ray.
   uint64_t pinned_pieces = 0;
+  uint64_t pin_rays[64] = {};
 };
 
 class MoveGenerator {
@@ -42,18 +44,36 @@ public:
   MoveList generate_pseudo_legal_moves(const Position &position) const;
   MoveList generate_legal_moves(const Position &position) const;
 
+  bool is_in_check(const Position &position, Color color) const;
+
 private:
+  // Sliding attacks as a function, so the pin search can run once per
+  // direction instead of twice over the same code.
+  using SliderAttacks = uint64_t (*)(int square, uint64_t occupancy);
+
   template<Color Us>
-  int generate_pawn_moves(const Position &position, Move *moves, Masks masks) const;
+  int generate_pawn_moves(const Position &position, Move *moves, const Masks &masks) const;
 
   template<PieceType PieceT>
-  int generate_piece_moves(const Position &position, Move *moves, Masks masks) const;
+  int generate_piece_moves(const Position &position, Move *moves, const Masks &masks) const;
 
-  int generate_castling_moves(const Position &position, Move *moves, Masks masks) const;
+  int generate_castling_moves(const Position &position, Move *moves, const Masks &masks) const;
+
   Masks generate_masks(const Position &position) const;
+  uint64_t attack_map(const Position &position, Color color, uint64_t occupancy) const;
+  void find_checkers(const Position &position, Square king_square, Masks &masks) const;
+  void find_pins(
+      const Position &position,
+      Square king_square,
+      uint64_t snipers,
+      SliderAttacks attacks,
+      Masks &masks
+  ) const;
 
-  bool is_square_attacked(const Position &position, Square square, Color by_color) const;
-  bool is_in_check(const Position &position, Color color) const;
+  /// @brief Drop the en passant captures that leave the king in check.
+  MoveList filter_en_passant_legality(const Position &position, const MoveList &pseudo) const;
+
   bool is_legal_move(Position &position, const Move &move) const;
+  bool is_square_attacked(const Position &position, Square square, Color by_color) const;
   Square find_king(const Position &position, Color color) const;
 };
