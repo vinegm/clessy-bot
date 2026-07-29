@@ -5,6 +5,7 @@
 #include "move_gen.hpp"
 #include "position.hpp"
 #include "search.hpp"
+#include "thread_pool.hpp"
 
 #include <string>
 
@@ -41,6 +42,7 @@ public:
   void make_move(const Move &move);
   void undo_move();
   uint64_t perft(int depth);
+  uint64_t perft_parallel(int depth, ThreadPool &pool);
   std::vector<std::pair<Move, int>> perft_divide(int depth);
 
 private:

@@ -216,6 +216,12 @@ void ClessUCI::handle_perft(const std::vector<std::string> &tokens) {
   if (tokens.size() < 3) return Logger::error("go perft: requires a depth argument");
 
   int depth = std::stoi(tokens[2]);
+  if (tokens.size() > 3 && tokens[3] == "threads") {
+    uint64_t total_nodes = engine.perft_parallel(depth, pool);
+    Logger::respond("Nodes searched: ", total_nodes);
+    return;
+  }
+
   auto results = engine.perft_divide(depth);
 
   unsigned long total_nodes = 0;

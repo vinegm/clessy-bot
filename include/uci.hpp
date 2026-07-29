@@ -2,6 +2,7 @@
 
 #include "engine.hpp"
 #include "search.hpp"
+#include "thread_pool.hpp"
 
 #include <condition_variable>
 #include <mutex>
@@ -23,6 +24,7 @@ public:
 
 private:
   ClessEngine engine;
+  ThreadPool pool;
 
   // Options, all read on the search thread only while it is being started.
   int multipv = 1;
