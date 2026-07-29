@@ -3,6 +3,7 @@
 #include "chess_types.hpp"
 #include "eval.hpp"
 #include "move_gen.hpp"
+#include "nnue.hpp"
 #include "position.hpp"
 #include "search.hpp"
 #include "thread_pool.hpp"
@@ -29,7 +30,7 @@ public:
 
   bool in_check() const { return generator.is_in_check(pos, pos.to_move); }
 
-  int evaluate() const { return evaluate_hce(pos); }
+  int evaluate() const { return NNUE::is_loaded() ? NNUE::evaluate(pos) : evaluate_hce(pos); }
 
   SearchResult search(
       const SearchLimits &limits,

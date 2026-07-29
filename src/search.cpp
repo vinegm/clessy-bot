@@ -2,6 +2,7 @@
 
 #include "eval.hpp"
 #include "move_gen.hpp"
+#include "nnue.hpp"
 #include "position.hpp"
 #include "tt.hpp"
 
@@ -10,6 +11,10 @@
 
 namespace {
 using Clock = std::chrono::steady_clock;
+
+int evaluate(const Position &pos) {
+  return NNUE::is_loaded() ? NNUE::evaluate(pos) : evaluate_hce(pos);
+}
 
 // MVV-LVA: prefer capturing valuable victims with cheap attackers, and try
 // promotions early too.
@@ -111,7 +116,7 @@ public:
 
     // Standing pat: the side to move is never forced to capture, so the
     // static score is a lower bound on what this node is worth.
-    int best = evaluate_hce(pos);
+    int best = evaluate(pos);
     if (best >= beta) return best;
     alpha = std::max(alpha, best);
 

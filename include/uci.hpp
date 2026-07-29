@@ -54,10 +54,12 @@ private:
   void handle_perft(const std::vector<std::string> &tokens);
   void handle_stop();
   void handle_ponderhit();
+  void handle_nnue(const std::vector<std::string> &tokens);
   void handle_d();
   void handle_eval();
 
   void apply_option(const std::string &name, const std::string &value);
+  bool load_network(const std::string &path);
 
   void parse_go_limits(const std::vector<std::string> &tokens, SearchLimits &limits, bool &ponder);
 

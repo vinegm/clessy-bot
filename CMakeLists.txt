@@ -14,6 +14,7 @@ set(SOURCES
     src/engine.cpp
     src/position.cpp
     src/move_gen.cpp
+    src/nnue.cpp
     src/eval.cpp
     src/search.cpp
     src/tt.cpp
