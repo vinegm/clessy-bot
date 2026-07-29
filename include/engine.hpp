@@ -18,10 +18,13 @@ public:
   }
 
   Color to_move() const { return pos.to_move; }
+  uint64_t get_hash() const { return pos.hash; }
   Piece get_piece_at(Square square) { return pos.get_piece_at(square); }
 
   MoveList get_legal_moves() const;
   MoveList get_legal_moves_from(Square square) const;
+
+  bool in_check() const { return generator.is_in_check(pos, pos.to_move); }
 
   void make_move(const Move &move);
   void undo_move();

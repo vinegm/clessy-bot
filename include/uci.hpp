@@ -27,6 +27,10 @@ private:
   void handle_go(const std::vector<std::string> &tokens);
   void handle_d();
 
+  // Board character for a piece: uppercase White, lowercase Black, a
+  // space for an empty square, which is the convention the FEN uses.
+  static char piece_to_char(Piece piece);
+
   // Whether a token names a command, so junk before one can be
   // skipped the way the spec asks.
   static bool is_command(const std::string &token);

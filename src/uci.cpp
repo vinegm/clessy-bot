@@ -4,6 +4,7 @@
 #include "logger.hpp"
 #include "uci_utils.hpp"
 
+#include <cctype>
 #include <iostream>
 #include <sys/types.h>
 
@@ -145,7 +146,37 @@ void ClessUCI::handle_go(const std::vector<std::string> &tokens) {
 }
 
 void ClessUCI::handle_d() {
+  // Ranks print from 8 down to 1 so the board reads the way a board looks,
+  // which is the opposite of the square numbering.
+  constexpr const char *RULE = " +---+---+---+---+---+---+---+---+";
+
+  for (int rank = 7; rank >= 0; rank--) {
+    Logger::respond(RULE);
+
+    std::string row = " |";
+    for (int file = 0; file < 8; file++) {
+      row += ' ';
+      row += piece_to_char(engine.get_piece_at(indexes_to_square(rank, file)));
+      row += " |";
+    }
+
+    row += ' ';
+    row += static_cast<char>('1' + rank);
+    Logger::respond(row);
+  }
+
+  Logger::respond(RULE);
+  Logger::respond("   a   b   c   d   e   f   g   h");
+  Logger::respond("");
+
   Logger::respond("Fen: ", engine.get_fen());
+
+  char hash_str[19];
+  snprintf(hash_str, sizeof(hash_str), "0x%016lx", engine.get_hash());
+  Logger::respond("Hash: ", hash_str);
+
+  Logger::respond("Side to move: ", engine.to_move() == WHITE ? "white" : "black");
+  Logger::respond("In check: ", engine.in_check() ? "yes" : "no");
 
   std::string moves_str;
   MoveList legal_moves = engine.get_legal_moves();
@@ -191,6 +222,15 @@ void ClessUCI::process_moves(const std::vector<std::string> &tokens, size_t star
 
     engine.make_move(move);
   }
+}
+
+char ClessUCI::piece_to_char(Piece piece) {
+  constexpr char SYMBOLS[] = " pnbrqk";
+
+  char symbol = SYMBOLS[decode_type(piece)];
+  if (decode_color(piece) == WHITE) symbol = static_cast<char>(std::toupper(symbol));
+
+  return symbol;
 }
 
 bool ClessUCI::is_command(const std::string &token) {
