@@ -10,7 +10,8 @@
 void ClessDatagen::usage() {
   Logger::respond("usage: clessy datagen [options]");
   Logger::respond("");
-  Logger::respond("  --out <path>          output file (default data.txt)");
+  Logger::respond("  --format <binpack|text>   output format (default binpack)");
+  Logger::respond("  --out <path>          output file (default data.binpack or data.txt)");
   Logger::respond("  --append              add to an existing output file instead of refusing");
   Logger::respond("  --games <n>           games to play (default 1000)");
   Logger::respond("  --nodes <n>           search nodes per move (default 5000)");
@@ -43,6 +44,15 @@ bool ClessDatagen::parse_options(int argc, char **argv) {
 
     if (flag == "--out") {
       options.output = value;
+    } else if (flag == "--format") {
+      if (value == "binpack") {
+        options.format = Format::Binpack;
+      } else if (value == "text") {
+        options.format = Format::Text;
+      } else {
+        Logger::error("datagen: unknown format '", value, "'");
+        return false;
+      }
     } else if (flag == "--eval-file") {
       options.eval_file = value;
     } else if (flag == "--games") {
@@ -71,7 +81,10 @@ bool ClessDatagen::parse_options(int argc, char **argv) {
     }
   }
 
-  if (options.output.empty()) options.output = "data.txt";
+  // Named after the format so a run cannot leave a .txt holding binary.
+  if (options.output.empty()) {
+    options.output = (options.format == Format::Binpack) ? "data.binpack" : "data.txt";
+  }
 
   return true;
 }
@@ -92,11 +105,17 @@ bool ClessDatagen::open_output() {
     return false;
   }
 
-  out.open(options.output, options.append ? std::ios::app : std::ios::trunc);
+  std::ios::openmode mode = options.append ? std::ios::app : std::ios::trunc;
+  if (options.format == Format::Binpack) mode |= std::ios::binary;
+
+  out.open(options.output, mode);
   if (!out) {
     Logger::error("datagen: could not open '", options.output, "' for writing");
     return false;
   }
+
+  // Appending continues a file that already carries the header.
+  if (options.format == Format::Binpack && !has_data) binpack.write_header();
 
   return true;
 }
@@ -148,6 +167,13 @@ const char *ClessDatagen::result_for(Outcome outcome, Color stm) {
   return stm_won ? "1.0" : "0.0";
 }
 
+BinpackWriter::Result ClessDatagen::binpack_result(Outcome outcome) {
+  if (outcome == Outcome::WhiteWin) return BinpackWriter::WHITE_WIN;
+  if (outcome == Outcome::BlackWin) return BinpackWriter::BLACK_WIN;
+
+  return BinpackWriter::DRAW;
+}
+
 bool ClessDatagen::setup_opening() {
   pos.set_fen(INITIAL_POSITION_FEN);
 
@@ -169,7 +195,7 @@ bool ClessDatagen::setup_opening() {
 }
 
 ClessDatagen::Outcome ClessDatagen::play_game() {
-  samples.clear();
+  plies.clear();
 
   history.clear();
   history.push_back(pos.hash);
@@ -203,7 +229,13 @@ ClessDatagen::Outcome ClessDatagen::play_game() {
     bool quiet = !in_check && !result.best_move.is_capture() && !result.best_move.is_promotion()
                  && !is_mate_score(result.score);
 
-    if (quiet) samples.push_back({pos.get_fen(), result.score, pos.to_move});
+    PlyRecord record;
+    record.move = result.best_move;
+    record.score = result.score;
+    record.stm = pos.to_move;
+    record.sample = quiet;
+    if (quiet && options.format == Format::Text) record.fen = pos.get_fen();
+    plies.push_back(record);
 
     // Playing a decided game to mate rarely changes the result and costs most
     // of the search time spent on that game.
@@ -229,9 +261,22 @@ ClessDatagen::Outcome ClessDatagen::play_game() {
   return Outcome::Unfinished;
 }
 
-void ClessDatagen::write_game(Outcome outcome) {
-  for (const Sample &sample : samples) {
-    out << sample.fen << ';' << sample.score << ';' << result_for(outcome, sample.stm) << '\n';
+void ClessDatagen::write_game(const std::string &start_fen, Outcome outcome) {
+  if (options.format == Format::Binpack) {
+    Position start(start_fen);
+    binpack.begin_game(start, binpack_result(outcome), static_cast<uint16_t>(plies.size()));
+
+    for (const PlyRecord &ply : plies) {
+      binpack.add_ply(ply.move, ply.score, ply.sample);
+    }
+
+    binpack.end_game();
+  } else {
+    for (const PlyRecord &ply : plies) {
+      if (!ply.sample) continue;
+
+      out << ply.fen << ';' << ply.score << ';' << result_for(outcome, ply.stm) << '\n';
+    }
   }
 
   // A run killed partway through should keep every game it finished.
@@ -301,6 +346,10 @@ int ClessDatagen::run(int argc, char **argv) {
       continue;
     }
 
+    // The binpack record replays from here, so it has to be taken before
+    // play_game moves the board off it.
+    std::string start_fen = pos.get_fen();
+
     Outcome outcome = play_game();
 
     // A game with no result has no label, and inventing one poisons the
@@ -310,10 +359,12 @@ int ClessDatagen::run(int argc, char **argv) {
       continue;
     }
 
-    write_game(outcome);
+    write_game(start_fen, outcome);
 
     played++;
-    written += static_cast<int64_t>(samples.size());
+    for (const PlyRecord &ply : plies) {
+      if (ply.sample) written++;
+    }
 
     if ((game + 1) % PROGRESS_INTERVAL == 0) report(game + 1);
   }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "binpack.hpp"
 #include "chess_types.hpp"
 #include "move_gen.hpp"
 #include "position.hpp"
@@ -27,10 +28,11 @@
  * all read by nearly every step, and threading them through arguments buys
  * nothing.
  *
- * The output is what `clessy-nnue` consumes: one line per position,
- * `<fen>;<score_cp>;<result>`, with both the score and the result from the
- * side to move. `clessy_nnue/dataset.py` is the other end of that contract;
- * changing a field here means changing it there.
+ * The output is what `clessy-nnue` consumes, in either of two formats holding
+ * the same samples — `binpack.hpp` for the default, or one text line per
+ * position, `<fen>;<score_cp>;<result>`, with both the score and the result
+ * from the side to move. `clessy_nnue/dataset.py` is the other end of that
+ * contract; changing a field here means changing it there.
  */
 class ClessDatagen {
 public:
@@ -44,6 +46,10 @@ public:
   int run(int argc, char **argv);
 
 private:
+  enum class Format {
+    Binpack,
+    Text
+  };
   enum class Outcome {
     WhiteWin,
     BlackWin,
@@ -52,6 +58,7 @@ private:
   };
 
   struct Options {
+    Format format = Format::Binpack;
     std::string output;
     std::string eval_file;
 
@@ -74,14 +81,17 @@ private:
     bool append = false;
   };
 
-  /// @brief One position kept from a played game.
+  /// @brief One ply of a played game.
   ///
-  /// The result is only known once the game is over, so the side to move is
-  /// carried along until there is one to write.
-  struct Sample {
+  /// The binpack format needs every move to keep its chain intact, so plies
+  /// the filter rejected are recorded too and marked. Only a sample carries a
+  /// FEN, since only the text writer reads one and building it is not free.
+  struct PlyRecord {
     std::string fen;
+    Move move{};
     int score = 0;
-    Color stm = WHITE;
+    Color stm = WHITE; // whose result the label must be written from
+    bool sample = false;
   };
 
   // A random opening can land in a position that is already decided or already
@@ -99,9 +109,11 @@ private:
   Position pos{INITIAL_POSITION_FEN};
   std::mt19937_64 rng;
 
+  // Declared before the writer, which holds a reference to it.
   std::ofstream out;
+  BinpackWriter binpack{out};
 
-  std::vector<Sample> samples;
+  std::vector<PlyRecord> plies;
 
   // Zobrist keys of the current game, the last entry being the position on the
   // board. Cleared by every irreversible move, since nothing before one can
@@ -122,10 +134,10 @@ private:
   /// @brief Put the board in a random opening, or report an unusable attempt.
   bool setup_opening();
 
-  /// @brief Play the board out, keeping the positions worth training on.
+  /// @brief Play the board out, recording every ply played.
   Outcome play_game();
 
-  void write_game(Outcome outcome);
+  void write_game(const std::string &start_fen, Outcome outcome);
   void report(int64_t games) const;
 
   SearchLimits search_limits() const;
@@ -137,4 +149,5 @@ private:
   int repetition_count() const;
 
   static const char *result_for(Outcome outcome, Color stm);
+  static BinpackWriter::Result binpack_result(Outcome outcome);
 };

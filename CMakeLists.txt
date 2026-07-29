@@ -12,6 +12,7 @@ set(SOURCES
     src/main.cpp
     src/uci.cpp
     src/datagen.cpp
+    src/binpack.cpp
     src/engine.cpp
     src/position.cpp
     src/move_gen.cpp
