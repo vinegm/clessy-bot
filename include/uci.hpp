@@ -9,6 +9,12 @@
 #include <thread>
 #include <vector>
 
+#define HASH_MIN_MB 1
+#define HASH_MAX_MB 4096
+
+#define MULTIPV_MAX 256
+#define MOVE_OVERHEAD_MAX 5000
+
 class ClessUCI {
 public:
   ~ClessUCI();
@@ -18,8 +24,9 @@ public:
 private:
   ClessEngine engine;
 
-  // Options, read on the search thread only while it is being started.
+  // Options, all read on the search thread only while it is being started.
   int multipv = 1;
+  int64_t move_overhead = 10;
 
   std::thread search_thread;
   SearchControl control;
@@ -47,6 +54,8 @@ private:
   void handle_ponderhit();
   void handle_d();
   void handle_eval();
+
+  void apply_option(const std::string &name, const std::string &value);
 
   void parse_go_limits(const std::vector<std::string> &tokens, SearchLimits &limits, bool &ponder);
 

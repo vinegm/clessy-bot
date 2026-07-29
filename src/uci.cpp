@@ -5,6 +5,7 @@
 #include "tt.hpp"
 #include "uci_utils.hpp"
 
+#include <algorithm>
 #include <cctype>
 #include <iostream>
 #include <sys/types.h>
@@ -70,6 +71,20 @@ void ClessUCI::call_command(const std::vector<std::string> &leading_tokens) {
 void ClessUCI::handle_uci() {
   Logger::respond("id name Clessy");
   Logger::respond("id author vinegm");
+
+  Logger::respond(
+      "option name Hash type spin default ",
+      TT::DEFAULT_MB,
+      " min ",
+      HASH_MIN_MB,
+      " max ",
+      HASH_MAX_MB
+  );
+  Logger::respond("option name Clear Hash type button");
+  Logger::respond("option name Ponder type check default false");
+  Logger::respond("option name MultiPV type spin default 1 min 1 max ", MULTIPV_MAX);
+  Logger::respond("option name Move Overhead type spin default 10 min 0 max ", MOVE_OVERHEAD_MAX);
+
   Logger::respond("uciok");
 }
 
@@ -88,9 +103,62 @@ void ClessUCI::handle_register() {
 }
 
 void ClessUCI::handle_setoption(const std::vector<std::string> &tokens) {
+  size_t index = 1;
+  if (index >= tokens.size() || tokens[index] != "name") {
+    return Logger::warn("setoption: expected 'name'");
+  }
+
+  // Both the name and the value can be several words, so they run until the
+  // next keyword rather than taking one token each.
+  std::string name;
+  for (index++; index < tokens.size() && tokens[index] != "value"; index++) {
+    if (!name.empty()) name += " ";
+    name += tokens[index];
+  }
+
+  std::string value;
+  if (index < tokens.size() && tokens[index] == "value") {
+    for (index++; index < tokens.size(); index++) {
+      if (!value.empty()) value += " ";
+      value += tokens[index];
+    }
+  }
+
+  // Resizing the table under a running search would pull the ground out from
+  // under it.
   stop_search();
 
-  Logger::warn("setoption: no options are advertised yet");
+  apply_option(name, value);
+}
+
+void ClessUCI::apply_option(const std::string &name, const std::string &value) {
+  std::string key = name;
+  std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c) {
+    return std::tolower(c);
+  });
+
+  if (key == "hash") {
+    TT::resize(std::clamp(std::stoi(value), HASH_MIN_MB, HASH_MAX_MB));
+    return;
+  }
+
+  if (key == "clear hash") return TT::clear();
+
+  if (key == "multipv") {
+    multipv = std::clamp(std::stoi(value), 1, MULTIPV_MAX);
+    return;
+  }
+
+  if (key == "move overhead") {
+    move_overhead = std::clamp<int64_t>(std::stoll(value), 0, MOVE_OVERHEAD_MAX);
+    return;
+  }
+
+  // Pondering is driven entirely by the GUI sending "go ponder", so there is
+  // no engine-side state behind the option.
+  if (key == "ponder") return;
+
+  Logger::warn("unknown option: '", name, "'");
 }
 
 void ClessUCI::handle_ucinewgame() {
@@ -218,6 +286,7 @@ void ClessUCI::handle_go(const std::vector<std::string> &tokens) {
 
   SearchLimits limits;
   limits.multipv = multipv;
+  limits.move_overhead = move_overhead;
 
   bool ponder = false;
   parse_go_limits(tokens, limits, ponder);
