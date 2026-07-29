@@ -3,6 +3,8 @@
 #include "engine.hpp"
 #include "search.hpp"
 
+#include <condition_variable>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -19,6 +21,11 @@ private:
   std::thread search_thread;
   SearchControl control;
 
+  std::mutex search_mutex;
+
+  // Raised when the GUI releases a held bestmove ("stop" or "ponderhit").
+  std::condition_variable search_release;
+
   bool quitting = false;
 
   void call_command(const std::vector<std::string> &leading_tokens);
@@ -34,16 +41,20 @@ private:
   void handle_go(const std::vector<std::string> &tokens);
   void handle_perft(const std::vector<std::string> &tokens);
   void handle_stop();
+  void handle_ponderhit();
   void handle_d();
   void handle_eval();
 
-  void parse_go_limits(const std::vector<std::string> &tokens, SearchLimits &limits);
+  void parse_go_limits(const std::vector<std::string> &tokens, SearchLimits &limits, bool &ponder);
 
-  void start_search(const SearchLimits &limits);
+  void start_search(const SearchLimits &limits, bool ponder);
   void search_worker(SearchLimits limits);
 
   // Ask the search to stop and wait for it, leaving the engine idle.
   void stop_search();
+
+  // Block until the GUI allows a held bestmove out.
+  void await_release(bool was_pondering);
 
   static std::string score_to_uci(int score);
   void send_iteration_info(const SearchResult &result);

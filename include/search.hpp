@@ -53,13 +53,17 @@ struct SearchLimits {
 
 /// @brief The handle the caller keeps on a search running on another thread.
 ///
-/// The flag is read on the search thread and written on the input thread,
+/// Both flags are read on the search thread and written on the input thread,
 /// which is the whole reason the UCI loop can answer "isready" and "stop"
 /// while a search is in flight.
 struct SearchControl {
   // Set by "stop" and "quit". Honoured everywhere, including at depth 1 where
   // the time and node budgets are deliberately ignored.
   std::atomic<bool> stop{false};
+
+  // True while this is a ponder search. Budgets do not apply until "ponderhit"
+  // clears it, because that is the moment the engine's clock actually starts.
+  std::atomic<bool> pondering{false};
 };
 
 struct SearchResult {
@@ -88,12 +92,13 @@ using SearchInfoCallback = std::function<void(const SearchResult &)>;
  * Deepens until limits.depth, the node budget, the time budget, or control's
  * stop flag. The time budget comes from movetime when set, otherwise from the
  * side to move's clock (a slice sized by movestogo, plus half the increment,
- * less the move overhead). The position is restored before returning.
+ * less the move overhead). A ponder search arms no deadline until control's
+ * pondering flag clears. The position is restored before returning.
  *
  * @param pos The position to search
  * @param limits Depth and clock limits
  * @param on_iteration Optional callback fired for each completed iteration
- * @param control Optional stop handle owned by the caller
+ * @param control Optional stop/ponder handle owned by the caller
  * @return Best line of the last completed iteration
  */
 SearchResult run_search(

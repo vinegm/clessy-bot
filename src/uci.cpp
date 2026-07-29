@@ -49,6 +49,7 @@ void ClessUCI::call_command(const std::vector<std::string> &leading_tokens) {
   if (command == "uci") return handle_uci();
   if (command == "isready") return handle_isready();
   if (command == "stop") return handle_stop();
+  if (command == "ponderhit") return handle_ponderhit();
   if (command == "debug") return handle_debug(tokens);
   if (command == "register") return handle_register();
 
@@ -158,13 +159,21 @@ void ClessUCI::handle_perft(const std::vector<std::string> &tokens) {
   Logger::respond("\nNodes searched: ", total_nodes);
 }
 
-void ClessUCI::parse_go_limits(const std::vector<std::string> &tokens, SearchLimits &limits) {
+void ClessUCI::parse_go_limits(
+    const std::vector<std::string> &tokens,
+    SearchLimits &limits,
+    bool &ponder
+) {
   for (size_t i = 1; i < tokens.size(); i++) {
     const std::string &token = tokens[i];
 
-    // The only limit that takes no argument, so it can be the last token.
+    // The two limits that take no argument, so either can be the last token.
     if (token == "infinite") {
       limits.infinite = true;
+      continue;
+    }
+    if (token == "ponder") {
+      ponder = true;
       continue;
     }
 
@@ -191,41 +200,93 @@ void ClessUCI::handle_go(const std::vector<std::string> &tokens) {
   if (engine.get_legal_moves().empty()) return Logger::respond("bestmove (none)");
 
   SearchLimits limits;
-  parse_go_limits(tokens, limits);
+
+  bool ponder = false;
+  parse_go_limits(tokens, limits, ponder);
 
   // A bare "go" bounds nothing, which the spec defines as searching until
-  // "stop".
+  // "stop". A ponder search is already open-ended in the same way.
   bool bounded = limits.has_clock() || limits.nodes >= 0 || limits.depth != MAX_SEARCH_DEPTH;
-  if (!bounded) limits.infinite = true;
+  if (!bounded && !ponder) limits.infinite = true;
 
-  start_search(limits);
+  start_search(limits, ponder);
 }
 
-void ClessUCI::start_search(const SearchLimits &limits) {
+void ClessUCI::start_search(const SearchLimits &limits, bool ponder) {
   // A finished search still owns a joinable thread, and assigning over one
   // calls std::terminate.
   stop_search();
 
   control.stop.store(false, std::memory_order_relaxed);
+  control.pondering.store(ponder, std::memory_order_relaxed);
 
   search_thread = std::thread([this, limits] { search_worker(limits); });
 }
 
 void ClessUCI::search_worker(SearchLimits limits) {
+  bool was_pondering = control.pondering.load(std::memory_order_relaxed);
+
   SearchInfoCallback report = [this](const SearchResult &line) {
     send_iteration_info(line);
   };
   SearchResult result = engine.search(limits, report, &control);
 
-  Logger::respond("bestmove ", move_to_uci(result.best_move));
+  // The spec forbids a bestmove before "stop" or "ponderhit" once the GUI has
+  // asked for an infinite or ponder search, even when the search ran out of
+  // depth on its own first.
+  if (was_pondering || limits.infinite) await_release(was_pondering);
+
+  std::string line = Logger::format("bestmove ", move_to_uci(result.best_move));
+
+  // The move the engine expects in reply is what it would ponder on.
+  if (result.pv.size() >= 2) line += " ponder " + move_to_uci(result.pv[1]);
+
+  Logger::respond(line);
 }
 
-void ClessUCI::handle_stop() { control.stop.store(true, std::memory_order_relaxed); }
+void ClessUCI::await_release(bool was_pondering) {
+  std::unique_lock<std::mutex> lock(search_mutex);
+
+  search_release.wait(lock, [this, was_pondering] {
+    if (control.stop.load(std::memory_order_relaxed)) return true;
+
+    return was_pondering && !control.pondering.load(std::memory_order_relaxed);
+  });
+}
+
+void ClessUCI::handle_stop() {
+  // Written under the mutex, not just atomically: await_release can otherwise
+  // miss the flag between testing its predicate and going to sleep, and the
+  // bestmove would never come out.
+  {
+    std::lock_guard<std::mutex> lock(search_mutex);
+    control.stop.store(true, std::memory_order_relaxed);
+    control.pondering.store(false, std::memory_order_relaxed);
+  }
+
+  search_release.notify_all();
+}
+
+void ClessUCI::handle_ponderhit() {
+  {
+    std::lock_guard<std::mutex> lock(search_mutex);
+    control.pondering.store(false, std::memory_order_relaxed);
+  }
+
+  search_release.notify_all();
+}
 
 void ClessUCI::stop_search() {
   if (!search_thread.joinable()) return;
 
-  control.stop.store(true, std::memory_order_relaxed);
+  {
+    std::lock_guard<std::mutex> lock(search_mutex);
+    control.stop.store(true, std::memory_order_relaxed);
+    control.pondering.store(false, std::memory_order_relaxed);
+  }
+  search_release.notify_all();
+
+  // The lock is released first: the worker needs it to leave await_release.
   search_thread.join();
 }
 
@@ -366,6 +427,6 @@ char ClessUCI::piece_to_char(Piece piece) {
 bool ClessUCI::is_command(const std::string &token) {
   return token == "uci" || token == "debug" || token == "isready" || token == "setoption"
          || token == "register" || token == "ucinewgame" || token == "position" || token == "go"
-         || token == "stop" || token == "quit" || token == "exit" || token == "d"
-         || token == "eval";
+         || token == "stop" || token == "ponderhit" || token == "quit" || token == "exit"
+         || token == "d" || token == "eval";
 }
