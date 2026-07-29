@@ -9,6 +9,8 @@
 #include <iostream>
 #include <sys/types.h>
 
+ClessUCI::~ClessUCI() { stop_search(); }
+
 void ClessUCI::run() {
   std::string line;
 
@@ -25,6 +27,8 @@ void ClessUCI::run() {
       Logger::error("could not handle '", line, "': ", error.what());
     }
   }
+
+  stop_search();
 }
 
 void ClessUCI::call_command(const std::vector<std::string> &leading_tokens) {
@@ -40,10 +44,16 @@ void ClessUCI::call_command(const std::vector<std::string> &leading_tokens) {
   std::vector<std::string> tokens(leading_tokens.begin() + start, leading_tokens.end());
   const std::string &command = tokens[0];
 
+  // Commands that answer without touching the position, so they may run
+  // alongside a search.
   if (command == "uci") return handle_uci();
   if (command == "isready") return handle_isready();
+  if (command == "stop") return handle_stop();
   if (command == "debug") return handle_debug(tokens);
   if (command == "register") return handle_register();
+
+  // Everything below reads or mutates the position, so it stops the search
+  // first.
   if (command == "setoption") return handle_setoption(tokens);
   if (command == "ucinewgame") return handle_ucinewgame();
   if (command == "position") return handle_position(tokens);
@@ -77,10 +87,14 @@ void ClessUCI::handle_register() {
 }
 
 void ClessUCI::handle_setoption(const std::vector<std::string> &tokens) {
+  stop_search();
+
   Logger::warn("setoption: no options are advertised yet");
 }
 
 void ClessUCI::handle_ucinewgame() {
+  stop_search();
+
   engine.set_fen(INITIAL_POSITION_FEN);
 
   // Whatever is stored describes a different game.
@@ -89,6 +103,8 @@ void ClessUCI::handle_ucinewgame() {
 
 void ClessUCI::handle_position(const std::vector<std::string> &tokens) {
   if (tokens.size() < 2) return Logger::warn("position: requires at least one argument");
+
+  stop_search();
 
   std::string position_type = tokens[1];
 
@@ -127,32 +143,133 @@ void ClessUCI::handle_position(const std::vector<std::string> &tokens) {
   Logger::warn("position: unknown type '", position_type, "'");
 }
 
-void ClessUCI::handle_go(const std::vector<std::string> &tokens) {
-  if (tokens.size() > 1 && tokens[1] == "perft") {
-    if (tokens.size() < 3) return Logger::error("go perft: requires a depth argument");
+void ClessUCI::handle_perft(const std::vector<std::string> &tokens) {
+  if (tokens.size() < 3) return Logger::error("go perft: requires a depth argument");
 
-    int depth = std::stoi(tokens[2]);
+  int depth = std::stoi(tokens[2]);
+  auto results = engine.perft_divide(depth);
 
-    auto results = engine.perft_divide(depth);
-
-    unsigned long total_nodes = 0;
-    for (const auto &[move, nodes] : results) {
-      Logger::respond(move_to_uci(move), ": ", nodes);
-      total_nodes += nodes;
-    }
-
-    Logger::respond("\nNodes searched: ", total_nodes);
-    return;
+  unsigned long total_nodes = 0;
+  for (const auto &[move, nodes] : results) {
+    Logger::respond(move_to_uci(move), ": ", nodes);
+    total_nodes += nodes;
   }
 
-  MoveList legal_moves = engine.get_legal_moves();
+  Logger::respond("\nNodes searched: ", total_nodes);
+}
 
-  if (legal_moves.empty()) return Logger::respond("bestmove (none)");
+void ClessUCI::parse_go_limits(const std::vector<std::string> &tokens, SearchLimits &limits) {
+  for (size_t i = 1; i < tokens.size(); i++) {
+    const std::string &token = tokens[i];
 
-  Logger::respond("bestmove ", move_to_uci(legal_moves[0]));
+    // The only limit that takes no argument, so it can be the last token.
+    if (token == "infinite") {
+      limits.infinite = true;
+      continue;
+    }
+
+    if (i + 1 >= tokens.size()) continue;
+
+    if (token == "depth") limits.depth = std::stoi(tokens[i + 1]);
+    if (token == "nodes") limits.nodes = std::stoll(tokens[i + 1]);
+    if (token == "movetime") limits.movetime = std::stoll(tokens[i + 1]);
+    if (token == "movestogo") limits.movestogo = std::stoi(tokens[i + 1]);
+    if (token == "wtime") limits.wtime = std::stoll(tokens[i + 1]);
+    if (token == "btime") limits.btime = std::stoll(tokens[i + 1]);
+    if (token == "winc") limits.winc = std::stoll(tokens[i + 1]);
+    if (token == "binc") limits.binc = std::stoll(tokens[i + 1]);
+  }
+}
+
+void ClessUCI::handle_go(const std::vector<std::string> &tokens) {
+  // The GUI is not supposed to start a search during one, but if it does the
+  // old search has to go before anything touches the position.
+  stop_search();
+
+  if (tokens.size() > 1 && tokens[1] == "perft") return handle_perft(tokens);
+
+  if (engine.get_legal_moves().empty()) return Logger::respond("bestmove (none)");
+
+  SearchLimits limits;
+  parse_go_limits(tokens, limits);
+
+  // A bare "go" bounds nothing, which the spec defines as searching until
+  // "stop".
+  bool bounded = limits.has_clock() || limits.nodes >= 0 || limits.depth != MAX_SEARCH_DEPTH;
+  if (!bounded) limits.infinite = true;
+
+  start_search(limits);
+}
+
+void ClessUCI::start_search(const SearchLimits &limits) {
+  // A finished search still owns a joinable thread, and assigning over one
+  // calls std::terminate.
+  stop_search();
+
+  control.stop.store(false, std::memory_order_relaxed);
+
+  search_thread = std::thread([this, limits] { search_worker(limits); });
+}
+
+void ClessUCI::search_worker(SearchLimits limits) {
+  SearchInfoCallback report = [this](const SearchResult &line) {
+    send_iteration_info(line);
+  };
+  SearchResult result = engine.search(limits, report, &control);
+
+  Logger::respond("bestmove ", move_to_uci(result.best_move));
+}
+
+void ClessUCI::handle_stop() { control.stop.store(true, std::memory_order_relaxed); }
+
+void ClessUCI::stop_search() {
+  if (!search_thread.joinable()) return;
+
+  control.stop.store(true, std::memory_order_relaxed);
+  search_thread.join();
+}
+
+void ClessUCI::send_iteration_info(const SearchResult &result) {
+  int64_t nps = (result.elapsed_ms > 0) ? result.nodes * 1000 / result.elapsed_ms : 0;
+
+  std::string info = Logger::format(
+      "info depth ",
+      result.depth,
+      " seldepth ",
+      result.seldepth,
+      " score ",
+      score_to_uci(result.score),
+      " nodes ",
+      result.nodes,
+      " time ",
+      result.elapsed_ms
+  );
+
+  if (nps > 0) info += Logger::format(" nps ", nps);
+  info += Logger::format(" hashfull ", TT::hashfull());
+
+  info += " pv";
+  if (result.pv.empty()) {
+    info += " " + move_to_uci(result.best_move);
+  } else {
+    for (const Move &move : result.pv) {
+      info += " " + move_to_uci(move);
+    }
+  }
+
+  Logger::respond(info);
+}
+
+std::string ClessUCI::score_to_uci(int score) {
+  if (!is_mate_score(score)) return "cp " + std::to_string(score);
+
+  int mate_in = mate_distance_moves(score);
+  return "mate " + std::to_string(score > 0 ? mate_in : -mate_in);
 }
 
 void ClessUCI::handle_d() {
+  stop_search();
+
   // Ranks print from 8 down to 1 so the board reads the way a board looks,
   // which is the opposite of the square numbering.
   constexpr const char *RULE = " +---+---+---+---+---+---+---+---+";
@@ -195,7 +312,11 @@ void ClessUCI::handle_d() {
   Logger::respond("Legal moves (", legal_moves.count, "): ", moves_str);
 }
 
-void ClessUCI::handle_eval() { Logger::respond("Eval (stm, cp): ", engine.evaluate()); }
+void ClessUCI::handle_eval() {
+  stop_search();
+
+  Logger::respond("Eval (stm, cp): ", engine.evaluate());
+}
 
 bool ClessUCI::resolve_move(const std::string &uci, Move &move) const {
   Move parsed;
@@ -245,5 +366,6 @@ char ClessUCI::piece_to_char(Piece piece) {
 bool ClessUCI::is_command(const std::string &token) {
   return token == "uci" || token == "debug" || token == "isready" || token == "setoption"
          || token == "register" || token == "ucinewgame" || token == "position" || token == "go"
-         || token == "quit" || token == "exit" || token == "d" || token == "eval";
+         || token == "stop" || token == "quit" || token == "exit" || token == "d"
+         || token == "eval";
 }

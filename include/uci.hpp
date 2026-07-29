@@ -1,16 +1,23 @@
 #pragma once
 
 #include "engine.hpp"
+#include "search.hpp"
 
 #include <string>
+#include <thread>
 #include <vector>
 
 class ClessUCI {
 public:
+  ~ClessUCI();
+
   void run();
 
 private:
   ClessEngine engine;
+
+  std::thread search_thread;
+  SearchControl control;
 
   bool quitting = false;
 
@@ -25,8 +32,21 @@ private:
   void handle_ucinewgame();
   void handle_position(const std::vector<std::string> &tokens);
   void handle_go(const std::vector<std::string> &tokens);
+  void handle_perft(const std::vector<std::string> &tokens);
+  void handle_stop();
   void handle_d();
   void handle_eval();
+
+  void parse_go_limits(const std::vector<std::string> &tokens, SearchLimits &limits);
+
+  void start_search(const SearchLimits &limits);
+  void search_worker(SearchLimits limits);
+
+  // Ask the search to stop and wait for it, leaving the engine idle.
+  void stop_search();
+
+  static std::string score_to_uci(int score);
+  void send_iteration_info(const SearchResult &result);
 
   // Board character for a piece: uppercase White, lowercase Black, a
   // space for an empty square, which is the convention the FEN uses.

@@ -4,6 +4,7 @@
 #include "eval.hpp"
 #include "move_gen.hpp"
 #include "position.hpp"
+#include "search.hpp"
 
 #include <string>
 
@@ -28,6 +29,14 @@ public:
   bool in_check() const { return generator.is_in_check(pos, pos.to_move); }
 
   int evaluate() const { return evaluate_hce(pos); }
+
+  SearchResult search(
+      const SearchLimits &limits,
+      const SearchInfoCallback &on_iteration = nullptr,
+      SearchControl *control = nullptr
+  ) {
+    return run_search(pos, limits, on_iteration, control);
+  }
 
   void make_move(const Move &move);
   void undo_move();
