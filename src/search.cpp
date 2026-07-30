@@ -30,12 +30,12 @@ int move_order_score(const Position &pos, const Move &move, const Move &tt_move)
   int score = 0;
 
   if (move.is_capture()) {
-    PieceType victim = move.is_en_passant() ? PAWN : decode_type(pos.lookup_table[move.to]);
-    PieceType attacker = decode_type(pos.lookup_table[move.from]);
+    PieceType victim = move.is_en_passant() ? PAWN : decode_type(pos.lookup_table[move.to()]);
+    PieceType attacker = decode_type(pos.lookup_table[move.from()]);
     score += CAPTURE_ORDER + 10 * ORDER_VALUE[victim] - ORDER_VALUE[attacker];
   }
 
-  if (move.is_promotion()) score += CAPTURE_ORDER + ORDER_VALUE[move.promotion_piece];
+  if (move.is_promotion()) score += CAPTURE_ORDER + ORDER_VALUE[move.promotion_piece()];
 
   return score;
 }
@@ -250,7 +250,7 @@ private:
   void record_cutoff(const Move &move, int depth, int ply) {
     // Clamped below the killer bucket so hot quiets never outrank killers or
     // captures.
-    int &score = history[pos.to_move][move.from][move.to];
+    int &score = history[pos.to_move][move.from()][move.to()];
     score = std::min(score + depth * depth, KILLER_ORDER - 1);
 
     if (ply < MAX_SEARCH_DEPTH && move != killers[ply][0]) {
@@ -277,7 +277,7 @@ private:
       if (move == killers[ply][1]) return KILLER_ORDER;
     }
 
-    return history[pos.to_move][move.from][move.to];
+    return history[pos.to_move][move.from()][move.to()];
   }
 
   // Count a node and test the budgets. Returns false once the search should

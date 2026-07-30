@@ -23,9 +23,9 @@ uint16_t BinpackWriter::encode_move(const Move &move) {
     special = 3;
   }
 
-  uint16_t promotion = move.is_promotion() ? promotion_code(move.promotion_piece) : 0;
+  uint16_t promotion = move.is_promotion() ? promotion_code(move.promotion_piece()) : 0;
 
-  return static_cast<uint16_t>(move.from) | static_cast<uint16_t>(move.to) << 6 | promotion << 12
+  return static_cast<uint16_t>(move.from()) | static_cast<uint16_t>(move.to()) << 6 | promotion << 12
          | special << 14;
 }
 

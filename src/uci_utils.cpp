@@ -56,9 +56,9 @@ Square uci_to_square(const std::string &uci) {
 
 // Convert a Move to UCI notation (e.g., "e2e4" or "e7e8q" for promotion).
 std::string move_to_uci(const Move &move) {
-  std::string result = square_to_uci(move.from) + square_to_uci(move.to);
+  std::string result = square_to_uci(move.from()) + square_to_uci(move.to());
 
-  if (move.is_promotion()) { result += piece_type_to_char(move.promotion_piece); }
+  if (move.is_promotion()) { result += piece_type_to_char(move.promotion_piece()); }
 
   return result;
 }
@@ -113,19 +113,14 @@ Move uci_to_move(const std::string &uci) {
   Square from = uci_to_square(uci.substr(0, 2));
   Square to = uci_to_square(uci.substr(2, 2));
 
-  Move move;
-  move.from = from;
-  move.to = to;
-  move.type = NORMAL_MOVE;
-  move.promotion_piece = NO_TYPE;
-
-  // Check for promotion
+  // Text carries no capture, castling or en passant flag, so this is only ever
+  // a partial move; ClessUCI matches it against the generated list to recover
+  // the real one.
   if (uci.length() == 5) {
-    move.type = static_cast<MoveType>(move.type | PROMOTION);
-    move.promotion_piece = char_to_piece_type(uci[4]);
+    return Move(from, to, PROMOTION, char_to_piece_type(uci[4]));
   }
 
-  return move;
+  return Move(from, to);
 }
 
 // Check if a token is a recognized UCI command.

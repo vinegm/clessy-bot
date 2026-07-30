@@ -116,28 +116,80 @@ enum MoveType : uint8_t {
   EN_PASSANT = 1 << 3
 };
 
+/**
+ * A move packed into 16 bits: from in bits 0-5, to in bits 6-11, a flag
+ * nibble in bits 12-15.
+ *
+ * The nibble collapses MoveType and the promotion piece into one value, which
+ * is the only way both fit alongside two squares. That makes the encoding
+ * canonical — one bit pattern per legal move — so equality is a single
+ * integer compare and the whole move fits in a transposition table slot.
+ *
+ * MoveType stays the construction vocabulary because it reads better at the
+ * generator's call sites; it is translated on the way in and never stored.
+ */
 struct Move {
-  Square from;
-  Square to;
-  MoveType type = NORMAL_MOVE;
-  PieceType promotion_piece = NO_TYPE;
+  // Layout of the flag nibble. The capture and promotion bits are positional
+  // so the predicates below stay single masks: 0b0100 is set by every capture
+  // (en passant and promotion-captures included) and 0b1000 by every
+  // promotion. The low two bits of a promotion select the piece.
+  enum Flag : uint16_t {
+    FLAG_QUIET = 0,
+    FLAG_CASTLING = 2,
+    FLAG_CAPTURE = 4,
+    FLAG_EN_PASSANT = 5,
+    FLAG_PROMOTION = 8,
+    FLAG_PROMOTION_CAPTURE = 12
+  };
 
-  bool is_capture() const { return (type & (CAPTURE | EN_PASSANT)) != 0; }
-  bool is_promotion() const { return (type & PROMOTION) != 0; }
-  bool is_castling() const { return (type & CASTLING) != 0; }
-  bool is_en_passant() const { return (type & EN_PASSANT) != 0; }
+  uint16_t data = 0;
 
-  bool operator==(const Move &other) const {
-    bool eq_to = to == other.to;
-    bool eq_from = from == other.from;
-    bool eq_type = type == other.type;
-    bool eq_promotion = promotion_piece == other.promotion_piece;
+  constexpr Move() = default;
 
-    return eq_to && eq_from && eq_type && eq_promotion;
+  // Not explicit: the generator writes `{from, to, PROMOTION, QUEEN}`.
+  constexpr Move(Square from, Square to, MoveType type = NORMAL_MOVE, PieceType promotion = NO_TYPE)
+      : data(
+            static_cast<uint16_t>(from) | static_cast<uint16_t>(to) << 6
+            | pack_flags(type, promotion) << 12
+        ) {}
+
+  constexpr Square from() const { return Square(data & 0x3F); }
+  constexpr Square to() const { return Square((data >> 6) & 0x3F); }
+  constexpr uint16_t flags() const { return data >> 12; }
+  constexpr uint16_t raw() const { return data; }
+
+  constexpr bool is_capture() const { return (flags() & 4) != 0; }
+  constexpr bool is_promotion() const { return (flags() & 8) != 0; }
+  constexpr bool is_castling() const { return flags() == FLAG_CASTLING; }
+  constexpr bool is_en_passant() const { return flags() == FLAG_EN_PASSANT; }
+
+  constexpr PieceType promotion_piece() const {
+    return is_promotion() ? PieceType(KNIGHT + (flags() & 3)) : NO_TYPE;
   }
 
-  bool operator!=(const Move &other) const { return !(*this == other); }
+  // A default-constructed move. No real move has from == to, so this cannot
+  // collide with one, which is what lets killers and TT moves start empty.
+  constexpr bool is_null() const { return data == 0; }
+
+  constexpr bool operator==(const Move &other) const { return data == other.data; }
+  constexpr bool operator!=(const Move &other) const { return data != other.data; }
+
+private:
+  static constexpr uint16_t pack_flags(MoveType type, PieceType promotion) {
+    if (type & PROMOTION) {
+      uint16_t base = (type & CAPTURE) ? FLAG_PROMOTION_CAPTURE : FLAG_PROMOTION;
+      return base + static_cast<uint16_t>(promotion - KNIGHT);
+    }
+
+    if (type & EN_PASSANT) return FLAG_EN_PASSANT;
+    if (type & CASTLING) return FLAG_CASTLING;
+    if (type & CAPTURE) return FLAG_CAPTURE;
+
+    return FLAG_QUIET;
+  }
 };
+
+static_assert(sizeof(Move) == 2, "Move must stay 16 bits wide");
 
 constexpr Color opposite_color(Color color) { return (color == WHITE) ? BLACK : WHITE; }
 

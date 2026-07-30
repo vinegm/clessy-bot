@@ -24,7 +24,7 @@ MoveList ClessEngine::get_legal_moves_from(Square square) const {
 
   MoveList filtered_moves;
   for (int i = 0; i < legal_moves.count; i++) {
-    if (legal_moves.moves[i].from == square) { filtered_moves.add_move(legal_moves.moves[i]); }
+    if (legal_moves.moves[i].from() == square) { filtered_moves.add_move(legal_moves.moves[i]); }
   }
 
   return filtered_moves;

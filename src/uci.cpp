@@ -383,9 +383,9 @@ bool ClessUCI::resolve_move(const std::string &uci, Move &move) const {
   // generator knows them, so the string has to be matched against a real move.
   MoveList legal_moves = engine.get_legal_moves();
   for (int i = 0; i < legal_moves.count; i++) {
-    if (legal_moves.moves[i].to != parsed.to) continue;
-    if (legal_moves.moves[i].from != parsed.from) continue;
-    if (legal_moves.moves[i].promotion_piece != parsed.promotion_piece) continue;
+    if (legal_moves.moves[i].to() != parsed.to()) continue;
+    if (legal_moves.moves[i].from() != parsed.from()) continue;
+    if (legal_moves.moves[i].promotion_piece() != parsed.promotion_piece()) continue;
 
     move = legal_moves.moves[i];
     return true;
