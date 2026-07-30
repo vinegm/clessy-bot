@@ -50,7 +50,7 @@ public:
   void undo_move();
 
   /**
-   * @brief Whether the current position already occurred in the make_move
+   * Whether the current position already occurred in the make_move
    * history (twofold), looking back at most halfmove_clock plies.
    */
   bool is_repetition() const;
@@ -66,6 +66,6 @@ private:
   void remove_piece(Color color, PieceType piece, Square square);
   void pass_turn();
 
-  /// @brief The hash contribution of an en passant square, if there is one.
+  // The hash contribution of an en passant square, if there is one.
   static uint64_t en_passant_key(const std::optional<Square> &square);
 };

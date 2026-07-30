@@ -13,7 +13,7 @@ int main(int argc, char **argv) {
     return datagen.run(argc - 2, argv + 2);
   }
 
-  TT::resize(TT::DEFAULT_MB);
+  TranspositionTable::resize(TranspositionTable::DEFAULT_MB);
 
   ClessUCI uci;
   uci.run();

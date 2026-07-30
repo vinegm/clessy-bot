@@ -2,13 +2,12 @@
 
 #include "logger.hpp"
 
-#include <cstring>
 #include <fstream>
 #include <memory>
 
 namespace {
-// At most one network is loaded per process, and it has no business being
-// visible in the header.
+// singleton network instance, since the NNUE
+// is global and immutable after load
 std::unique_ptr<NNUE::Network> network;
 } // namespace
 

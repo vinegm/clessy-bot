@@ -30,8 +30,8 @@ struct MoveList {
 
 struct Masks {
   uint64_t enemy_attacks = 0;
-  uint64_t check_mask = 0; // squares between the king and a checking slider
-  uint64_t checkers = 0;   // squares of the pieces giving check
+  uint64_t check_mask = 0; // between the king and a checking slider
+  uint64_t checkers = 0;   // pieces giving check
 
   // Where a piece that is pinned may still go, capturing the pinner included.
   // Only the squares set in pinned_pieces carry a meaningful ray.
@@ -41,10 +41,10 @@ struct Masks {
 
 class MoveGenerator {
 public:
-  MoveList generate_pseudo_legal_moves(const Position &position) const;
   MoveList generate_legal_moves(const Position &position) const;
+  MoveList generate_pseudo_legal_moves(const Position &position) const;
 
-  /// @brief Legal captures, en passant and promotions only, for quiescence.
+  // Legal captures, en passant and promotions only, for quiescence.
   MoveList generate_legal_captures(const Position &position) const;
 
   bool is_in_check(const Position &position, Color color) const;
@@ -53,6 +53,8 @@ private:
   // Sliding attacks as a function, so the pin search can run once per
   // direction instead of twice over the same code.
   using SliderAttacks = uint64_t (*)(int square, uint64_t occupancy);
+
+  MoveList filter_en_passant_legality(const Position &position, const MoveList &pseudo) const;
 
   // Everything but castling, which is the part both entry points share.
   // targets restricts where a move may land; pass ~0 for all of them.
@@ -91,9 +93,6 @@ private:
       SliderAttacks attacks,
       Masks &masks
   ) const;
-
-  /// @brief Drop the en passant captures that leave the king in check.
-  MoveList filter_en_passant_legality(const Position &position, const MoveList &pseudo) const;
 
   bool is_legal_move(Position &position, const Move &move) const;
   bool is_square_attacked(const Position &position, Square square, Color by_color) const;

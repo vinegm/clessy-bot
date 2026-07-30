@@ -1,7 +1,5 @@
 #include "attacks.hpp"
 
-#include <cstring>
-
 MagicEntry rook_magics[64];
 MagicEntry bishop_magics[64];
 
@@ -9,8 +7,8 @@ MagicEntry bishop_magics[64];
 static uint64_t rook_table[102400];
 static uint64_t bishop_table[5248];
 
-// Every attack a slider has from a square, given what blocks it. Slow, so it
-// is only ever used to fill the tables at startup.
+// Every attack a slider has from a square, given what blocks it. 
+// Slow, so it is only ever used to fill the tables at startup.
 using SlowAttacks = uint64_t (*)(int square, uint64_t occupancy);
 
 static uint64_t scan_ray(int square, uint64_t occupancy, int rank_dir, int file_dir) {

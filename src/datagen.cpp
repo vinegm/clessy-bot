@@ -311,7 +311,7 @@ int ClessDatagen::run(int argc, char **argv) {
 
   if (!open_output()) return 1;
 
-  TT::resize(options.hash_mb);
+  TranspositionTable::resize(options.hash_mb);
 
   // NNUE::load reports its own failures.
   if (!options.eval_file.empty() && !NNUE::load(options.eval_file)) return 1;
@@ -334,7 +334,7 @@ int ClessDatagen::run(int argc, char **argv) {
 
   for (int64_t game = 0; game < options.games; game++) {
     // Scores left by the previous game describe unrelated positions.
-    TT::clear();
+    TranspositionTable::clear();
 
     bool opened = false;
     for (int attempt = 0; attempt < OPENING_ATTEMPTS && !opened; attempt++) {

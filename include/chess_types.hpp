@@ -153,7 +153,7 @@ constexpr Color decode_color(uint8_t code) { return Color(code >> 3); }
 constexpr PieceType decode_type(uint8_t code) { return PieceType(code & 7); }
 
 /**
- * @brief Get the index of the least significant bit set in a bitboard.
+ * Get the index of the least significant bit set in a bitboard.
  *
  * @param bitboard
  * @return Square
@@ -161,7 +161,7 @@ constexpr PieceType decode_type(uint8_t code) { return PieceType(code & 7); }
 constexpr Square lsb_square(uint64_t bitboard) { return Square(__builtin_ctzll(bitboard)); }
 
 /**
- * @brief Pop the least significant bit from a bitboard and return it.
+ * Pop the least significant bit from a bitboard and return it.
  *
  * @param bitboard
  * @return uint64_t
@@ -173,7 +173,7 @@ constexpr uint64_t pop_lsb(uint64_t &bitboard) {
 }
 
 /**
- * @brief Pop the least significant bit from a bitboard and return its index.
+ * Pop the least significant bit from a bitboard and return its index.
  *
  * @param bitboard
  * @return Square
@@ -185,7 +185,7 @@ constexpr Square pop_lsb_square(uint64_t &bitboard) {
 }
 
 /**
- * @brief Count the number of bits set in a bitboard.
+ * Count the number of bits set in a bitboard.
  *
  * @param bitboard
  * @return int
@@ -193,7 +193,7 @@ constexpr Square pop_lsb_square(uint64_t &bitboard) {
 constexpr int count_bits(uint64_t bitboard) { return __builtin_popcountll(bitboard); }
 
 /**
- * @brief Move a single bit in a bitboard by a specified number of squares in a given direction.
+ * Move a single bit in a bitboard by a specified number of squares in a given direction.
  *
  * @tparam direction The direction to move (NORTH, SOUTH, EAST, WEST)
  * @param bb The input bitboard
@@ -209,7 +209,7 @@ constexpr uint64_t move_bit(uint64_t bb, int squares) {
 }
 
 /**
- * @brief Move a single bit in a bitboard by a specified number of squares in a given direction.
+ * Move a single bit in a bitboard by a specified number of squares in a given direction.
  *
  * @param bb The input bitboard (should have exactly one bit set)
  * @param direction The direction to move
