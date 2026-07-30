@@ -1,10 +1,13 @@
 #pragma once
 
 #include "chess_types.hpp"
-#include "position.hpp"
 
 #include <cstdint>
 #include <string>
+
+// Only ever a parameter here. Declaring it rather than including position.hpp
+// is what lets Position hold an Accumulator without a cycle.
+class Position;
 
 class NNUE {
 public:
@@ -29,6 +32,28 @@ public:
     int32_t out_bias;
   };
 
+  /**
+   * The feature transformer's output for both perspectives, kept up to date
+   * across make_move and undo_move instead of rebuilt per evaluation.
+   *
+   * Indexed by the colour whose perspective it is, not by side to move, so a
+   * move does not have to swap the halves. Adding and subtracting a feature's
+   * weight row are exact integer inverses, which is what lets undo_move
+   * reverse a move rather than recompute the position.
+   *
+   * `generation` is the network generation these values were built for. Zero
+   * means "not built": a fresh position, a position whose board changed
+   * outside make_move, or one copied from another. Loading a network bumps
+   * the generation, so accumulators built for the old one refresh themselves
+   * rather than going quietly stale.
+   */
+  struct Accumulator {
+    int32_t values[2][L1]; // [perspective]
+    uint32_t generation = 0;
+
+    bool is_computed() const { return generation != 0; }
+  };
+
   // Load a .nnue network file produced by clessy-nnue.
   static bool load(const std::string &path);
 
@@ -43,13 +68,24 @@ public:
     return rel_color * 384 + (type - 1) * 64 + rel_square;
   }
 
-  // Evaluate a position with the loaded network.
-  // Rebuilds both accumulators from scratch (no incremental updates yet).
+  // Evaluate a position with the loaded network, refreshing the position's
+  // accumulator first if it is not current.
   static int evaluate(const Position &pos);
 
+  /**
+   * Fold one piece into an already-computed accumulator, both perspectives at
+   * once.
+   *
+   * Called by Position for every board mutation, and only while the
+   * accumulator is computed — an untouched one stays that way, so a perft
+   * that never evaluates pays a predictable branch and nothing more.
+   */
+  static void add_feature(Accumulator &accumulator, Color color, PieceType type, Square square);
+  static void remove_feature(Accumulator &accumulator, Color color, PieceType type, Square square);
+
 private:
-  // Rebuild one perspective's accumulator from the pieces on the board.
-  static void accumulate(const Position &pos, Color perspective, int32_t (&accumulator)[L1]);
+  // Rebuild both perspectives from the pieces on the board.
+  static void refresh(const Position &pos, Accumulator &accumulator);
 
   // Clipped ReLU, the activation the trainer quantizes against.
   static constexpr int32_t crelu(int32_t value) {

@@ -21,6 +21,11 @@ void Position::set_fen(const std::string &fen) {
   undo_stack.clear();
   hash = 0;
 
+  // The board is cleared below without going through remove_piece, so anything
+  // the accumulator still holds describes the previous position. Drop it
+  // before the first add_piece rather than adding the new pieces on top.
+  accumulator().generation = 0;
+
   std::istringstream fen_stream(fen);
   std::string piece_placement, active_color, castling, en_passant, halfmove_str, fullmove_str;
 
@@ -355,6 +360,13 @@ void Position::update_castling_rights(const Move &move, Square captured_square) 
   }
 }
 
+// These two are the only places the board changes, which is what makes them
+// the whole of the NNUE incremental update: make_move, undo_move and set_fen
+// all express castling, promotion, en passant and captures as add/remove
+// pairs, so keeping the accumulator in step here keeps it in step everywhere.
+//
+// An uncomputed accumulator is left alone rather than started, so a perft that
+// never evaluates pays one predictable branch per piece touched.
 void Position::add_piece(Color color, PieceType piece, Square square) {
   uint64_t square_bit = square_to_bit(square);
   get_bb_ref(color, piece) |= square_bit;
@@ -364,6 +376,9 @@ void Position::add_piece(Color color, PieceType piece, Square square) {
   const Piece encoded = encode_piece(color, piece);
   lookup_table[square] = encoded;
   hash ^= zobrist_piece_key(encoded, square);
+
+  NNUE::Accumulator &acc = accumulator();
+  if (acc.is_computed()) NNUE::add_feature(acc, color, piece, square);
 }
 
 void Position::remove_piece(Color color, PieceType piece, Square square) {
@@ -374,6 +389,9 @@ void Position::remove_piece(Color color, PieceType piece, Square square) {
 
   hash ^= zobrist_piece_key(encode_piece(color, piece), square);
   lookup_table[square] = NO_PIECE;
+
+  NNUE::Accumulator &acc = accumulator();
+  if (acc.is_computed()) NNUE::remove_feature(acc, color, piece, square);
 }
 
 void Position::pass_turn() {
