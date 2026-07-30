@@ -51,6 +51,25 @@ public:
   void undo_move();
 
   /**
+   * Pass the turn without moving a piece, for null move pruning.
+   *
+   * Pushed onto the same undo stack as a real move and reversed by the same
+   * undo_move, which recognises the null move and skips the piece work. The
+   * en passant square goes with it: the chance to capture does not survive
+   * the opponent declining to move.
+   *
+   * Illegal when in check, and unsound in zugzwang; both are the caller's to
+   * rule out.
+   */
+  void make_null_move();
+
+  // Whether this side has a piece other than pawns and the king. Null move
+  // pruning needs it, since a side down to pawns is where zugzwang lives.
+  bool has_non_pawn_material(Color color) const {
+    return (occupancy[color] & ~get_bb(color, PAWN) & ~get_bb(color, KING)) != 0;
+  }
+
+  /**
    * Whether the current position already occurred in the make_move
    * history (twofold), looking back at most halfmove_clock plies.
    */

@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 
 namespace {
 using Clock = std::chrono::steady_clock;
@@ -17,6 +18,32 @@ using Clock = std::chrono::steady_clock;
 // capture sorts last among captures of the same victim but stays inside the
 // capture bucket.
 constexpr int ORDER_VALUE[7] = {0, 100, 320, 330, 500, 900, 1000};
+
+constexpr int MAX_LMR_MOVES = 64;
+
+/**
+ * How much depth a late quiet move gives up, by depth and by position in the
+ * move list.
+ *
+ * Both logarithms matter. Growth in depth is what makes the reduction pay,
+ * growth in move index is what keeps it off the moves ordering actually
+ * believes in, and taking logs of both is what stops a shallow node from
+ * being reduced into nothing.
+ */
+struct LmrTable {
+  int values[MAX_SEARCH_DEPTH + 1][MAX_LMR_MOVES]{};
+
+  LmrTable() {
+    for (int depth = 1; depth <= MAX_SEARCH_DEPTH; depth++) {
+      for (int move_index = 1; move_index < MAX_LMR_MOVES; move_index++) {
+        values[depth][move_index] =
+            static_cast<int>(0.75 + std::log(depth) * std::log(move_index) / 2.25);
+      }
+    }
+  }
+};
+
+const LmrTable LMR_TABLE;
 
 // Ordering buckets: TT move, then captures and promotions (MVV-LVA), then
 // killers, then quiets by history score.
@@ -141,8 +168,18 @@ public:
     }
   }
 
-  int negamax(int depth, int ply, int alpha, int beta) {
+  /**
+   * @param allow_null False directly under a null move, so the search cannot
+   *                   pass twice in a row and prune a subtree it never looked
+   *                   at.
+   */
+  int negamax(int depth, int ply, int alpha, int beta, bool allow_null = true) {
     if (ply > seldepth) seldepth = ply;
+
+    // A window wider than one point means the caller wants an exact score
+    // here, not just a bound: this is a node on the principal variation, and
+    // the speculative pruning below is not worth the risk on it.
+    const bool is_pv = beta - alpha > 1;
 
     // Every exit below leaves the line empty unless a move improves alpha.
     if (ply < MAX_SEARCH_DEPTH) pv_length[ply] = 0;
@@ -171,9 +208,36 @@ public:
       }
     }
 
+    const bool in_check = MoveGenerator::is_in_check(pos, pos.to_move);
+
     MoveList moves = MoveGenerator::generate_legal_moves(pos);
-    if (moves.empty()) {
-      return MoveGenerator::is_in_check(pos, pos.to_move) ? -(MATE_SCORE - ply) : 0;
+    if (moves.empty()) return in_check ? -(MATE_SCORE - ply) : 0;
+
+    // Null move pruning: hand the opponent a free move. If the position still
+    // fails high after that, the moves actually available can only do better,
+    // so this subtree is not worth searching properly.
+    //
+    // The moves above are generated first so a stalemate cannot reach this —
+    // a position with no legal move is the purest zugzwang there is, and the
+    // assumption behind the null move fails hardest exactly there.
+    //
+    // Skipped in check, where passing is not a legal alternative to begin
+    // with, on the principal variation, where a wrong bound would propagate
+    // into the reported line, and when the side to move has only pawns left,
+    // which is where zugzwang otherwise lives.
+    if (allow_null && !is_pv && !in_check && depth >= 3
+        && pos.has_non_pawn_material(pos.to_move)) {
+      const int reduction = 2 + depth / 6;
+
+      pos.make_null_move();
+      int score = -negamax(depth - 1 - reduction, ply + 1, -beta, -beta + 1, false);
+      pos.undo_move();
+      if (stopped) return 0;
+
+      // A mate proved by giving the opponent a free move is not a mate. Report
+      // that the node fails high without claiming a distance that would then
+      // travel through score_to_tt as if it were real.
+      if (score >= beta) return is_mate_score(score) ? beta : score;
     }
 
     order_quiet_aware(moves, tt_move, ply);
@@ -181,11 +245,13 @@ public:
     int alpha_orig = alpha;
     int best = -INF_SCORE;
     Move best_move = moves[0];
+    int move_index = 0;
 
     for (const Move &move : moves) {
       pos.make_move(move);
-      int score = -negamax(depth - 1, ply + 1, -beta, -alpha);
+      int score = search_move(move, depth, ply, alpha, beta, is_pv, in_check, move_index);
       pos.undo_move();
+      move_index++;
       if (stopped) return 0;
 
       if (score > best) {
@@ -212,6 +278,91 @@ public:
   }
 
 private:
+  /**
+   * Search one move, with the position already advanced past it.
+   *
+   * Two ideas share this one place because they share a re-search. Principal
+   * variation search assumes the first move is best and asks of every later
+   * one only whether it beats that, which a one-point window answers for a
+   * fraction of the nodes. Late move reductions go further and assume the
+   * tail of a well-ordered list is not merely worse but not worth full depth.
+   *
+   * Both are speculation, and both are undone the same way: whenever the cheap
+   * search comes back above alpha, it was wrong and the move is searched
+   * again properly. That is why they cost nothing when ordering is good and
+   * only a re-search when it is not.
+   */
+  int search_move(
+      const Move &move,
+      int depth,
+      int ply,
+      int alpha,
+      int beta,
+      bool is_pv,
+      bool in_check,
+      int move_index
+  ) {
+    // The move ordering believes in, measured at full width because
+    // everything after it is measured against it.
+    if (move_index == 0) return -negamax(depth - 1, ply + 1, -beta, -alpha);
+
+    const int reduction = late_move_reduction(move, depth, ply, move_index, is_pv, in_check);
+
+    int score = -negamax(depth - 1 - reduction, ply + 1, -alpha - 1, -alpha);
+
+    // The reduction was wrong: this move is not tail material after all, so
+    // ask the same cheap question again at full depth.
+    if (reduction > 0 && score > alpha) {
+      score = -negamax(depth - 1, ply + 1, -alpha - 1, -alpha);
+    }
+
+    // It beat alpha, and a one-point window cannot say by how much. Inside a
+    // real window that difference is the whole answer.
+    //
+    // At a non-PV node beta is alpha + 1 and this is unreachable, which is
+    // the point: only nodes that need an exact score ever pay for one.
+    if (score > alpha && score < beta) {
+      score = -negamax(depth - 1, ply + 1, -beta, -alpha);
+    }
+
+    return score;
+  }
+
+  int late_move_reduction(
+      const Move &move,
+      int depth,
+      int ply,
+      int move_index,
+      bool is_pv,
+      bool in_check
+  ) {
+    // Captures and promotions change material and are why the tail of the
+    // list might not be tail at all; shallow nodes have nothing to give back;
+    // and in check every move is forced enough to deserve full depth.
+    if (depth < 3 || move_index < 3 || in_check || !is_quiet(move)) return 0;
+
+    // The position is already past the move, so this asks whether the move
+    // gave check. A forcing move is the opposite of the "probably
+    // irrelevant" bet a reduction makes, and it is how mates are delivered:
+    // reducing checks costs exact mate distances at the depth that should
+    // just prove them.
+    if (MoveGenerator::is_in_check(pos, pos.to_move)) return 0;
+
+    int reduction = LMR_TABLE.values[std::min(depth, MAX_SEARCH_DEPTH)]
+                                    [std::min(move_index, MAX_LMR_MOVES - 1)];
+
+    // A wrong reduction costs most on the principal variation, and a killer
+    // has already produced a cutoff at this exact ply, so neither takes the
+    // full reduction.
+    if (is_pv) reduction--;
+    if (ply < MAX_SEARCH_DEPTH && (move == killers[ply][0] || move == killers[ply][1])) {
+      reduction--;
+    }
+
+    // Always leave a ply of real search underneath.
+    return std::clamp(reduction, 0, depth - 2);
+  }
+
   Position &pos;
   SearchControl *control;
   int64_t node_limit;
@@ -393,7 +544,20 @@ SearchResult run_search(
         if (std::find(claimed.begin(), claimed.end(), move) != claimed.end()) continue;
 
         pos.make_move(move);
-        int score = -searcher.negamax(depth - 1, 1, -INF_SCORE, -alpha);
+
+        // Principal variation search at the root as well: the first move is
+        // the one the previous iteration liked, and every move after it only
+        // has to answer whether it is better, which a one-point window
+        // settles far more cheaply. A move that clears alpha is searched
+        // again at full width, since the reported score has to be exact.
+        int score;
+        if (!has_move) {
+          score = -searcher.negamax(depth - 1, 1, -INF_SCORE, -alpha);
+        } else {
+          score = -searcher.negamax(depth - 1, 1, -alpha - 1, -alpha);
+          if (score > alpha) score = -searcher.negamax(depth - 1, 1, -INF_SCORE, -alpha);
+        }
+
         pos.undo_move();
         if (searcher.stopped) break;
 
