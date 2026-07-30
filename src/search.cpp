@@ -157,13 +157,15 @@ public:
 
     Move tt_move{};
     if (const TranspositionTable::Entry *entry = TranspositionTable::probe(pos.hash)) {
-      tt_move = entry->move;
+      tt_move = entry->move();
 
       if (entry->depth >= depth) {
         int tt_score = score_from_tt(entry->score, ply);
+        TranspositionTable::Bound bound = entry->bound();
 
-        if (entry->bound == TranspositionTable::EXACT || (entry->bound == TranspositionTable::LOWER && tt_score >= beta)
-            || (entry->bound == TranspositionTable::UPPER && tt_score <= alpha)) {
+        if (bound == TranspositionTable::EXACT
+            || (bound == TranspositionTable::LOWER && tt_score >= beta)
+            || (bound == TranspositionTable::UPPER && tt_score <= alpha)) {
           return tt_score;
         }
       }
@@ -327,6 +329,10 @@ SearchResult run_search(
     SearchControl *control
 ) {
   Clock::time_point start = Clock::now();
+
+  // Entries from the previous search stay probeable but become the preferred
+  // replacement victims once this one needs their slots.
+  TranspositionTable::new_search();
 
   MoveList root_moves = MoveGenerator::generate_legal_moves(pos);
 
