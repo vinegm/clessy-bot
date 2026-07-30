@@ -1,5 +1,6 @@
 #include "datagen.hpp"
 
+#include "eval.hpp"
 #include "logger.hpp"
 #include "nnue.hpp"
 #include "tt.hpp"
@@ -178,14 +179,14 @@ bool ClessDatagen::setup_opening() {
   pos.set_fen(INITIAL_POSITION_FEN);
 
   for (int i = 0; i < options.random_plies; i++) {
-    MoveList moves = generator.generate_legal_moves(pos);
+    MoveList moves = MoveGenerator::generate_legal_moves(pos);
     if (moves.empty()) return false;
 
     std::uniform_int_distribution<int> pick(0, moves.count - 1);
     pos.make_move(moves[pick(rng)]);
   }
 
-  if (generator.generate_legal_moves(pos).empty()) return false;
+  if (MoveGenerator::generate_legal_moves(pos).empty()) return false;
   if (options.opening_max_score <= 0) return true;
 
   // Random moves lose material often enough that most openings are already
@@ -206,12 +207,12 @@ ClessDatagen::Outcome ClessDatagen::play_game() {
   Color streak_winner = WHITE;
 
   for (int ply = 0; ply < options.max_plies; ply++) {
-    MoveList moves = generator.generate_legal_moves(pos);
+    MoveList moves = MoveGenerator::generate_legal_moves(pos);
 
     // run_search reads moves[0] before doing anything else, so a terminal
     // position must never reach it.
     if (moves.empty()) {
-      if (!generator.is_in_check(pos, pos.to_move)) return Outcome::Draw;
+      if (!MoveGenerator::is_in_check(pos, pos.to_move)) return Outcome::Draw;
       return (pos.to_move == WHITE) ? Outcome::BlackWin : Outcome::WhiteWin;
     }
 
@@ -219,7 +220,7 @@ ClessDatagen::Outcome ClessDatagen::play_game() {
     if (repetition_count() >= 3) return Outcome::Draw;
     if (insufficient_material()) return Outcome::Draw;
 
-    bool in_check = generator.is_in_check(pos, pos.to_move);
+    bool in_check = MoveGenerator::is_in_check(pos, pos.to_move);
     SearchResult result = run_search(pos, limits);
 
     // The trainer fits a static evaluation, so a position whose score comes
@@ -311,7 +312,7 @@ int ClessDatagen::run(int argc, char **argv) {
 
   if (!open_output()) return 1;
 
-  TT::resize(options.hash_mb);
+  TranspositionTable::resize(options.hash_mb);
 
   // NNUE::load reports its own failures.
   if (!options.eval_file.empty() && !NNUE::load(options.eval_file)) return 1;
@@ -327,14 +328,14 @@ int ClessDatagen::run(int argc, char **argv) {
       " games, ",
       options.nodes,
       " nodes/move, eval ",
-      NNUE::is_loaded() ? "nnue" : "hce"
+      Eval::source_name()
   );
 
   started = std::chrono::steady_clock::now();
 
   for (int64_t game = 0; game < options.games; game++) {
     // Scores left by the previous game describe unrelated positions.
-    TT::clear();
+    TranspositionTable::clear();
 
     bool opened = false;
     for (int attempt = 0; attempt < OPENING_ATTEMPTS && !opened; attempt++) {

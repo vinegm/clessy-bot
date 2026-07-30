@@ -2,7 +2,6 @@
 
 #include "eval.hpp"
 #include "move_gen.hpp"
-#include "nnue.hpp"
 #include "position.hpp"
 #include "tt.hpp"
 
@@ -11,10 +10,6 @@
 
 namespace {
 using Clock = std::chrono::steady_clock;
-
-int evaluate(const Position &pos) {
-  return NNUE::is_loaded() ? NNUE::evaluate(pos) : evaluate_hce(pos);
-}
 
 // MVV-LVA: prefer capturing valuable victims with cheap attackers, and try
 // promotions early too.
@@ -102,7 +97,7 @@ public:
   bool stopped = false;
   bool time_checks_enabled = false;
 
-  /// @brief Whether another iteration would only be thrown away.
+  // Whether another iteration would only be thrown away.
   bool out_of_budget() {
     if (control && control->stop.load(std::memory_order_relaxed)) return true;
     if (node_limit >= 0 && nodes >= static_cast<uint64_t>(node_limit)) return true;
@@ -116,11 +111,11 @@ public:
 
     // Standing pat: the side to move is never forced to capture, so the
     // static score is a lower bound on what this node is worth.
-    int best = evaluate(pos);
+    int best = Eval::evaluate(pos);
     if (best >= beta) return best;
     alpha = std::max(alpha, best);
 
-    MoveList moves = generator.generate_legal_captures(pos);
+    MoveList moves = MoveGenerator::generate_legal_captures(pos);
     order_moves(pos, moves);
 
     for (const Move &move : moves) {
@@ -161,21 +156,23 @@ public:
     if (pos.halfmove_clock >= 100 || pos.is_repetition()) return 0;
 
     Move tt_move{};
-    if (const TT::Entry *entry = TT::probe(pos.hash)) {
+    if (const TranspositionTable::Entry *entry = TranspositionTable::probe(pos.hash)) {
       tt_move = entry->move;
 
       if (entry->depth >= depth) {
         int tt_score = score_from_tt(entry->score, ply);
 
-        if (entry->bound == TT::EXACT || (entry->bound == TT::LOWER && tt_score >= beta)
-            || (entry->bound == TT::UPPER && tt_score <= alpha)) {
+        if (entry->bound == TranspositionTable::EXACT || (entry->bound == TranspositionTable::LOWER && tt_score >= beta)
+            || (entry->bound == TranspositionTable::UPPER && tt_score <= alpha)) {
           return tt_score;
         }
       }
     }
 
-    MoveList moves = generator.generate_legal_moves(pos);
-    if (moves.empty()) { return generator.is_in_check(pos, pos.to_move) ? -(MATE_SCORE - ply) : 0; }
+    MoveList moves = MoveGenerator::generate_legal_moves(pos);
+    if (moves.empty()) {
+      return MoveGenerator::is_in_check(pos, pos.to_move) ? -(MATE_SCORE - ply) : 0;
+    }
 
     order_quiet_aware(moves, tt_move, ply);
 
@@ -206,15 +203,14 @@ public:
       }
     }
 
-    TT::Bound bound = (best >= beta) ? TT::LOWER : (best > alpha_orig ? TT::EXACT : TT::UPPER);
-    TT::store(pos.hash, best_move, score_to_tt(best, ply), depth, bound);
+    TranspositionTable::Bound bound = (best >= beta) ? TranspositionTable::LOWER : (best > alpha_orig ? TranspositionTable::EXACT : TranspositionTable::UPPER);
+    TranspositionTable::store(pos.hash, best_move, score_to_tt(best, ply), depth, bound);
 
     return best;
   }
 
 private:
   Position &pos;
-  MoveGenerator generator{};
   SearchControl *control;
   int64_t node_limit;
 
@@ -331,9 +327,8 @@ SearchResult run_search(
     SearchControl *control
 ) {
   Clock::time_point start = Clock::now();
-  MoveGenerator generator;
 
-  MoveList root_moves = generator.generate_legal_moves(pos);
+  MoveList root_moves = MoveGenerator::generate_legal_moves(pos);
 
   // "go searchmoves" restricts the root without changing anything below it.
   // Moves the position does not have are dropped rather than refused, and a

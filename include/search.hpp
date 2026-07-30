@@ -18,7 +18,7 @@ constexpr bool is_mate_score(int score) {
   return score > MATE_SCORE - 1000 || score < -(MATE_SCORE - 1000);
 }
 
-/// @brief Distance to mate in moves, for a score is_mate_score accepted.
+// Distance to mate in moves, for a score is_mate_score accepted.
 constexpr int mate_distance_moves(int score) {
   int plies = MATE_SCORE - (score > 0 ? score : -score);
   return (plies + 1) / 2;
@@ -61,11 +61,11 @@ struct SearchLimits {
   bool has_clock() const { return movetime >= 0 || wtime >= 0 || btime >= 0; }
 };
 
-/// @brief The handle the caller keeps on a search running on another thread.
-///
-/// Both flags are read on the search thread and written on the input thread,
-/// which is the whole reason the UCI loop can answer "isready" and "stop"
-/// while a search is in flight.
+// The handle the caller keeps on a search running on another thread.
+//
+// Both flags are read on the search thread and written on the input thread,
+// which is the whole reason the UCI loop can answer "isready" and "stop"
+// while a search is in flight.
 struct SearchControl {
   // Set by "stop" and "quit". Honoured everywhere, including at depth 1 where
   // the time and node budgets are deliberately ignored.
@@ -101,7 +101,7 @@ struct SearchResult {
 using SearchInfoCallback = std::function<void(const SearchResult &)>;
 
 /**
- * @brief Iterative-deepening negamax alpha-beta search with quiescence.
+ * Iterative-deepening negamax alpha-beta search with quiescence.
  *
  * Deepens until limits.depth, the node budget, the time budget, or control's
  * stop flag. The time budget comes from movetime when set, otherwise from the

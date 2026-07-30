@@ -9,7 +9,7 @@
 class Position;
 
 /**
- * @brief Writer for the .binpack training-data format.
+ * Writer for the .binpack training-data format.
  *
  * This header is the authoritative spec; `clessy-nnue/clessy_nnue/binpack.py`
  * reads what it writes and mirrors the layout below.
@@ -75,18 +75,12 @@ public:
 
   void write_header();
 
-  /**
-   * @brief Open a game record. Every ply must follow before end_game.
-   *
-   * @param start Position the game was played from
-   * @param result Outcome, from White
-   * @param plies How many ply records will be added
-   */
+  // Open a game record. Every ply must follow before end_game.
   void begin_game(const Position &start, Result result, uint16_t plies);
 
   void add_ply(const Move &move, int score, bool is_sample);
 
-  /// @brief Write the buffered game out as one unit.
+  // Write the buffered game out as one unit.
   void end_game();
 
 private:
@@ -100,7 +94,7 @@ private:
 
   void pack_position(const Position &pos);
 
-  /// @brief The two bits a promotion piece is stored in.
+  // The two bits a promotion piece is stored in.
   static uint16_t promotion_code(PieceType type);
 
   static uint16_t encode_move(const Move &move);

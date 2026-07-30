@@ -3,7 +3,6 @@
 #include "chess_types.hpp"
 #include "eval.hpp"
 #include "move_gen.hpp"
-#include "nnue.hpp"
 #include "position.hpp"
 #include "search.hpp"
 #include "thread_pool.hpp"
@@ -24,14 +23,8 @@ public:
   Color to_move() const { return pos.to_move; }
   uint64_t get_hash() const { return pos.hash; }
   Piece get_piece_at(Square square) { return pos.get_piece_at(square); }
-
-  MoveList get_legal_moves() const;
-  MoveList get_legal_moves_from(Square square) const;
-
-  bool in_check() const { return generator.is_in_check(pos, pos.to_move); }
-
-  int evaluate() const { return NNUE::is_loaded() ? NNUE::evaluate(pos) : evaluate_hce(pos); }
-
+  bool in_check() const { return MoveGenerator::is_in_check(pos, pos.to_move); }
+  int evaluate() const { return Eval::evaluate(pos); }
   SearchResult search(
       const SearchLimits &limits,
       const SearchInfoCallback &on_iteration = nullptr,
@@ -40,14 +33,14 @@ public:
     return run_search(pos, limits, on_iteration, control);
   }
 
+  MoveList get_legal_moves() const;
+  MoveList get_legal_moves_from(Square square) const;
   void make_move(const Move &move);
   void undo_move();
   uint64_t perft(int depth);
-  uint64_t perft_parallel(int depth, ThreadPool &pool);
   std::vector<std::pair<Move, int>> perft_divide(int depth);
 
 private:
-  MoveGenerator generator{};
   Position pos;
 
   mutable bool legal_cache_valid = false;

@@ -1,6 +1,15 @@
 #include "eval.hpp"
 
 #include "chess_types.hpp"
+#include "nnue.hpp"
+
+int Eval::evaluate(const Position &pos) {
+  if (NNUE::is_loaded()) return NNUE::evaluate(pos);
+
+  return evaluate_hce(pos);
+}
+
+const char *Eval::source_name() { return NNUE::is_loaded() ? "nnue" : "hce"; }
 
 namespace {
 // Material values indexed by PieceType (NO_TYPE, PAWN, ..., KING).
@@ -86,7 +95,7 @@ int piece_score(PieceType type, Color color, int sq) {
 }
 } // namespace
 
-int evaluate_hce(const Position &pos) {
+int Eval::evaluate_hce(const Position &pos) {
   int score = 0; // from white's point of view
 
   for (int sq = 0; sq < 64; sq++) {

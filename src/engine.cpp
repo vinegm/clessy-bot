@@ -10,7 +10,7 @@
 MoveList ClessEngine::get_legal_moves() const {
   if (legal_cache_valid) return legal_moves;
 
-  legal_moves = generator.generate_legal_moves(pos);
+  legal_moves = MoveGenerator::generate_legal_moves(pos);
   legal_cache_valid = true;
 
   return legal_moves;
@@ -18,7 +18,7 @@ MoveList ClessEngine::get_legal_moves() const {
 
 MoveList ClessEngine::get_legal_moves_from(Square square) const {
   if (!legal_cache_valid) {
-    legal_moves = generator.generate_legal_moves(pos);
+    legal_moves = MoveGenerator::generate_legal_moves(pos);
     legal_cache_valid = true;
   }
 
@@ -51,31 +51,6 @@ uint64_t ClessEngine::perft(int depth) {
     make_move(moves[i]);
     nodes += perft(depth - 1);
     undo_move();
-  }
-
-  return nodes;
-}
-
-uint64_t ClessEngine::perft_parallel(int depth, ThreadPool &pool) {
-  if (depth <= 1) return perft(depth);
-
-  MoveList moves = get_legal_moves();
-  std::string fen = get_fen();
-
-  // Root split: every task gets its own engine copy, so the workers never
-  // share mutable state.
-  std::vector<std::future<uint64_t>> futures;
-  for (int i = 0; i < moves.count; i++) {
-    futures.push_back(pool.submit([fen, move = moves[i], depth] {
-      ClessEngine worker(fen);
-      worker.make_move(move);
-      return worker.perft(depth - 1);
-    }));
-  }
-
-  uint64_t nodes = 0;
-  for (std::future<uint64_t> &future : futures) {
-    nodes += future.get();
   }
 
   return nodes;

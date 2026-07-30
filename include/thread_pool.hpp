@@ -11,7 +11,7 @@
 #include <vector>
 
 /**
- * @brief Pool of persistent worker threads consuming a shared task queue.
+ * Pool of persistent worker threads consuming a shared task queue.
  *
  * Threads are spawned once and sleep on a condition variable while idle, so
  * submitting a task costs a queue push + wakeup instead of a thread spawn.
@@ -34,7 +34,7 @@ public:
   size_t size() const { return workers.size(); }
 
   /**
-   * @brief Change the number of worker threads (e.g. UCI "Threads" option).
+   * Change the number of worker threads (e.g. UCI "Threads" option).
    *
    * Blocks until in-flight tasks finish.
    */
@@ -49,7 +49,7 @@ public:
   }
 
   /**
-   * @brief Queue a task and get a future for its result.
+   * Queue a task and get a future for its result.
    */
   template<typename F, typename... Args>
   auto submit(F &&fn, Args &&...args) -> std::future<std::invoke_result_t<F, Args...>> {
