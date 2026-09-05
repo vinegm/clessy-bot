@@ -15,7 +15,11 @@ set(SOURCES
     src/position.cpp
     src/move_gen.cpp
     src/attacks.cpp
-    src/uci_utils.cpp)
+    src/uci_utils.cpp
+    src/logger.cpp)
+
+find_package(Threads REQUIRED)
 
 add_executable(clessy ${SOURCES})
 target_include_directories(clessy PRIVATE ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(clessy PRIVATE Threads::Threads)

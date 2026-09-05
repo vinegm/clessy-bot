@@ -22,7 +22,5 @@ private:
   void handle_go(const std::vector<std::string> &tokens);
   void handle_d(const std::vector<std::string> &tokens);
 
-  void send_response(const std::string &response);
-  void send_info(const std::string &info);
   void process_moves(const std::vector<std::string> &tokens, size_t start_index);
 };

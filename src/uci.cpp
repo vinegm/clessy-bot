@@ -1,6 +1,7 @@
 #include "uci.hpp"
 
 #include "engine.hpp"
+#include "logger.hpp"
 #include "uci_utils.hpp"
 
 #include <iostream>
@@ -31,16 +32,16 @@ void ClessUCI::call_command(const std::vector<std::string> &tokens) {
   if (command == "d") { return handle_d(tokens); }
   if (command == "quit" || command == "exit") { exit(0); }
 
-  send_info("Unknown command: '" + command + "'");
+  Logger::warn("unknown command: '", command, "'");
 }
 
 void ClessUCI::handle_uci() {
-  send_response("id name Clessy");
-  send_response("id author vinegm");
-  send_response("uciok");
+  Logger::respond("id name Clessy");
+  Logger::respond("id author vinegm");
+  Logger::respond("uciok");
 }
 
-void ClessUCI::handle_isready() { send_response("readyok"); }
+void ClessUCI::handle_isready() { Logger::respond("readyok"); }
 
 void ClessUCI::handle_setoption(const std::vector<std::string> &tokens) {
   throw std::runtime_error("Not implemented");
@@ -50,7 +51,7 @@ void ClessUCI::handle_ucinewgame() { engine.set_fen(INITIAL_POSITION_FEN); }
 
 void ClessUCI::handle_position(const std::vector<std::string> &tokens) {
   if (tokens.size() < 2) {
-    send_response("Position command requires at least one argument");
+    Logger::warn("position: requires at least one argument");
     return;
   }
 
@@ -66,7 +67,7 @@ void ClessUCI::handle_position(const std::vector<std::string> &tokens) {
 
   if (position_type == "fen") {
     if (tokens.size() < 8) {
-      send_response("FEN position invalid: insufficient tokens");
+      Logger::warn("position: FEN is invalid, insufficient tokens");
       return;
     }
 
@@ -82,7 +83,7 @@ void ClessUCI::handle_position(const std::vector<std::string> &tokens) {
     return;
   }
 
-  send_response("Unknown position type: " + position_type);
+  Logger::warn("position: unknown type '", position_type, "'");
 }
 
 void ClessUCI::handle_go(const std::vector<std::string> &tokens) {
@@ -91,55 +92,43 @@ void ClessUCI::handle_go(const std::vector<std::string> &tokens) {
   }
 
   if (tokens[1] == "perft") {
-    if (tokens.size() < 3) { return send_response("Perft command requires depth argument"); }
+    if (tokens.size() < 3) return Logger::error("go perft: requires a depth argument");
+
     int depth = std::stoi(tokens[2]);
 
     auto results = engine.perft_divide(depth);
 
     unsigned long total_nodes = 0;
     for (const auto &[move, nodes] : results) {
-      std::string move_str = move_to_uci(move);
-
-      send_response(move_str + ": " + std::to_string(nodes));
+      Logger::respond(move_to_uci(move), ": ", nodes);
       total_nodes += nodes;
     }
 
-    send_response("\nNodes searched: " + std::to_string(total_nodes));
+    Logger::respond("\nNodes searched: ", total_nodes);
     return;
   }
 
   MoveList legal_moves = engine.get_legal_moves();
 
-  if (legal_moves.empty()) return send_response("bestmove (none)");
+  if (legal_moves.empty()) return Logger::respond("bestmove (none)");
 
   Move best_move = legal_moves[0];
 
-  send_response("bestmove " + move_to_uci(best_move));
+  Logger::respond("bestmove ", move_to_uci(best_move));
 }
 
 void ClessUCI::handle_d(const std::vector<std::string> &tokens) {
-  std::string fen = engine.get_fen();
-  send_response("Fen: " + fen);
+  Logger::respond("Fen: ", engine.get_fen());
 
   MoveList legal_moves = engine.get_legal_moves();
-  send_response("Legal moves (" + std::to_string(legal_moves.count) + "):");
 
   std::string moves_str;
   for (int i = 0; i < legal_moves.count; i++) {
-    moves_str += move_to_uci(legal_moves.moves[i]) + " ";
+    if (!moves_str.empty()) moves_str += " ";
+    moves_str += move_to_uci(legal_moves.moves[i]);
   }
 
-  send_response(moves_str);
-}
-
-void ClessUCI::send_response(const std::string &response) {
-  std::cout << response << std::endl;
-  std::cout.flush();
-}
-
-void ClessUCI::send_info(const std::string &info) {
-  std::cout << "info " << info << std::endl;
-  std::cout.flush();
+  Logger::respond("Legal moves (", legal_moves.count, "): ", moves_str);
 }
 
 void ClessUCI::process_moves(const std::vector<std::string> &tokens, size_t start_index) {
