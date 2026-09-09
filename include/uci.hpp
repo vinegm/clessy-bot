@@ -27,6 +27,7 @@ private:
   void handle_go(const std::vector<std::string> &tokens);
   void handle_d();
 
+  static char piece_to_char(Piece piece);
   static bool is_command(const std::string &token);
   bool resolve_move(const std::string &uci, Move &move) const;
   void process_moves(const std::vector<std::string> &tokens, size_t start_index);
