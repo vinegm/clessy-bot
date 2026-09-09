@@ -15,6 +15,7 @@ struct UndoInfo {
   std::optional<Square> en_passant_square{};
   int halfmove_clock{};
   int fullmove_counter{};
+  uint64_t hash{};
 };
 
 class Position {
@@ -24,6 +25,7 @@ public:
   Color to_move{};
   uint64_t occupancy[3]{};  // [Color]
   Piece lookup_table[64]{}; // Encoded pieces
+  uint64_t hash{};          // Zobrist hash
 
   CastlingRights castling_rights{};
   std::optional<Square> en_passant_square{};
@@ -43,6 +45,7 @@ public:
 
   void set_fen(const std::string &fen);
   std::string get_fen() const;
+  bool is_repetition() const;
   Piece get_piece_at(Square square);
   void make_move(const Move &move);
   void undo_move();
@@ -52,9 +55,11 @@ private:
   uint64_t bitboards[12]{};
 
   Square get_captured_square(const Move &move) const;
-  void push_undo_info(const Move &move, Piece captured_piece_encoded);
+  void push_undo_info(const Move &move, Piece captured_piece_encoded, uint64_t hash_before);
   void update_castling_rights(const Move &move, Square captured_square);
   void add_piece(Color color, PieceType piece, Square square);
   void remove_piece(Color color, PieceType piece, Square square);
   void pass_turn();
+
+  static uint64_t en_passant_key(const std::optional<Square> &square);
 };
