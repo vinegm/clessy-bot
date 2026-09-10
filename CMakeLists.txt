@@ -14,6 +14,7 @@ set(SOURCES
     src/engine.cpp
     src/position.cpp
     src/move_gen.cpp
+    src/eval.cpp
     src/attacks.cpp
     src/uci_utils.cpp
     src/logger.cpp)

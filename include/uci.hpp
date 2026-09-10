@@ -26,6 +26,7 @@ private:
   void handle_position(const std::vector<std::string> &tokens);
   void handle_go(const std::vector<std::string> &tokens);
   void handle_d();
+  void handle_eval();
 
   static char piece_to_char(Piece piece);
   static bool is_command(const std::string &token);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "chess_types.hpp"
+#include "eval.hpp"
 #include "move_gen.hpp"
 #include "position.hpp"
 
@@ -25,6 +26,7 @@ public:
 
   MoveList get_legal_moves() const;
   MoveList get_legal_moves_from(Square square) const;
+  int evaluate() const { return evaluator.evaluate(pos); }
   void make_move(const Move &move);
   void undo_move();
   uint64_t perft(int depth);
@@ -32,6 +34,7 @@ public:
 
 private:
   MoveGenerator generator{};
+  Evaluator evaluator{};
   Position pos;
 
   mutable bool legal_cache_valid = false;
