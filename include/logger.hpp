@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -10,7 +11,7 @@ class Logger {
 public:
   Logger() = delete;
 
-  enum class Level {
+  enum class Level : uint8_t {
     Error = 0,
     Warn = 1,
     Info = 2,

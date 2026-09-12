@@ -21,8 +21,8 @@ std::string square_to_uci(Square square) {
   int rank = square / 8;
 
   std::string result;
-  result += ('a' + file);
-  result += ('1' + rank);
+  result += static_cast<char>('a' + file);
+  result += static_cast<char>('1' + rank);
 
   return result;
 }

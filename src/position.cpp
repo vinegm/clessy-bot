@@ -71,6 +71,7 @@ void Position::set_fen(const std::string &fen) {
         case 'Q': castling_rights |= W_CASTLE_QUEEN; break;
         case 'k': castling_rights |= B_CASTLE_KING; break;
         case 'q': castling_rights |= B_CASTLE_QUEEN; break;
+        default: break;
       }
     }
   }
@@ -144,12 +145,12 @@ std::string Position::get_fen() const {
   // Castling rights
   fen += ' ';
   if (castling_rights == NO_CASTLING) {
-    fen += "-";
+    fen += '-';
   } else {
-    if (castling_rights & W_CASTLE_KING) fen += "K";
-    if (castling_rights & W_CASTLE_QUEEN) fen += "Q";
-    if (castling_rights & B_CASTLE_KING) fen += "k";
-    if (castling_rights & B_CASTLE_QUEEN) fen += "q";
+    if (castling_rights & W_CASTLE_KING) fen += 'K';
+    if (castling_rights & W_CASTLE_QUEEN) fen += 'Q';
+    if (castling_rights & B_CASTLE_KING) fen += 'k';
+    if (castling_rights & B_CASTLE_QUEEN) fen += 'q';
   }
 
   // En passant square

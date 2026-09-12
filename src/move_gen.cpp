@@ -144,10 +144,10 @@ int MoveGenerator::generate_pawn_moves(
         continue;
       }
 
-      *moves++ = {from, to, static_cast<MoveType>(CAPTURE | PROMOTION), QUEEN};
-      *moves++ = {from, to, static_cast<MoveType>(CAPTURE | PROMOTION), ROOK};
-      *moves++ = {from, to, static_cast<MoveType>(CAPTURE | PROMOTION), BISHOP};
-      *moves++ = {from, to, static_cast<MoveType>(CAPTURE | PROMOTION), KNIGHT};
+      *moves++ = {from, to, CAPTURE_PROMOTION, QUEEN};
+      *moves++ = {from, to, CAPTURE_PROMOTION, ROOK};
+      *moves++ = {from, to, CAPTURE_PROMOTION, BISHOP};
+      *moves++ = {from, to, CAPTURE_PROMOTION, KNIGHT};
     }
   }
 

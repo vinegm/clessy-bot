@@ -99,7 +99,7 @@ void ClessUCI::handle_position(const std::vector<std::string> &tokens) {
     int fields = 0;
 
     for (; index < tokens.size() && tokens[index] != "moves"; index++) {
-      if (!fen.empty()) fen += " ";
+      if (!fen.empty()) fen += ' ';
       fen += tokens[index];
       fields++;
     }
@@ -184,7 +184,7 @@ void ClessUCI::handle_d() {
   std::string moves_str;
   MoveList legal_moves = engine.get_legal_moves();
   for (int i = 0; i < legal_moves.count; i++) {
-    if (!moves_str.empty()) moves_str += " ";
+    if (!moves_str.empty()) moves_str += ' ';
     moves_str += move_to_uci(legal_moves.moves[i]);
   }
 

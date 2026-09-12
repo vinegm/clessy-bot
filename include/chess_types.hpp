@@ -113,7 +113,8 @@ enum MoveType : uint8_t {
   CAPTURE = 1 << 0,
   CASTLING = 1 << 1,
   PROMOTION = 1 << 2,
-  EN_PASSANT = 1 << 3
+  EN_PASSANT = 1 << 3,
+  CAPTURE_PROMOTION = CAPTURE | PROMOTION
 };
 
 struct Move {

@@ -17,7 +17,7 @@ std::string Logger::tag(Logger::Level level) {
 
 void Logger::raw(const std::string &line) {
   std::lock_guard<std::mutex> lock(output_mutex);
-  std::cout << line << std::endl;
+  std::cout << line << '\n' << std::flush;
 }
 
 void Logger::write(Level level, const std::string &message) {
@@ -26,5 +26,5 @@ void Logger::write(Level level, const std::string &message) {
   std::replace(flat.begin(), flat.end(), '\r', ' ');
 
   std::lock_guard<std::mutex> lock(output_mutex);
-  std::cout << "info string " << tag(level) << flat << std::endl;
+  std::cout << "info string " << tag(level) << flat << '\n' << std::flush;
 }

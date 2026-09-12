@@ -25,3 +25,43 @@ add_executable(clessy ${SOURCES})
 target_include_directories(clessy PRIVATE ${PROJECT_SOURCE_DIR}/include)
 target_compile_options(clessy PRIVATE -O3 -march=native)
 target_link_libraries(clessy PRIVATE Threads::Threads)
+
+# Dev tooling
+file(GLOB_RECURSE
+    FORMAT_FILES
+    CONFIGURE_DEPENDS
+    ${PROJECT_SOURCE_DIR}/src/*.cpp
+    ${PROJECT_SOURCE_DIR}/include/*.hpp)
+list(TRANSFORM
+    SOURCES
+    PREPEND
+    ${PROJECT_SOURCE_DIR}/
+    OUTPUT_VARIABLE
+    LINT_FILES)
+
+find_program(CLANG_FORMAT clang-format)
+find_program(CLANG_TIDY clang-tidy)
+
+if(CLANG_FORMAT)
+  add_custom_target(
+    fmt
+    COMMAND ${CLANG_FORMAT} -i ${FORMAT_FILES}
+    COMMENT "Formatting sources")
+
+  add_custom_target(
+    fmt-check
+    COMMAND ${CLANG_FORMAT} --dry-run --Werror ${FORMAT_FILES}
+    COMMENT "Checking formatting")
+endif()
+
+if(CLANG_TIDY)
+  add_custom_target(
+    lint
+    COMMAND ${CLANG_TIDY} -p ${PROJECT_BINARY_DIR} --quiet
+            ${LINT_FILES}
+    COMMENT "Running clang-tidy")
+endif()
+
+if(CLANG_FORMAT AND CLANG_TIDY)
+  add_custom_target(ci DEPENDS fmt-check lint)
+endif()
