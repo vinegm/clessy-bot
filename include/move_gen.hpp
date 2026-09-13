@@ -42,16 +42,35 @@ public:
   MoveList generate_pseudo_legal_moves(const Position &position) const;
   MoveList generate_legal_moves(const Position &position) const;
 
+  MoveList generate_legal_captures(const Position &position) const;
+
   bool is_in_check(const Position &position, Color color) const;
 
 private:
   using SliderAttacks = uint64_t (*)(int square, uint64_t occupancy);
 
+  int generate_moves(
+      const Position &position,
+      Move *moves,
+      const Masks &masks,
+      uint64_t targets
+  ) const;
+
   template<Color Us>
-  int generate_pawn_moves(const Position &position, Move *moves, const Masks &masks) const;
+  int generate_pawn_moves(
+      const Position &position,
+      Move *moves,
+      const Masks &masks,
+      uint64_t targets
+  ) const;
 
   template<PieceType PieceT>
-  int generate_piece_moves(const Position &position, Move *moves, const Masks &masks) const;
+  int generate_piece_moves(
+      const Position &position,
+      Move *moves,
+      const Masks &masks,
+      uint64_t targets
+  ) const;
 
   int generate_castling_moves(const Position &position, Move *moves, const Masks &masks) const;
 
