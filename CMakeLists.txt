@@ -15,6 +15,7 @@ set(SOURCES
     src/position.cpp
     src/move_gen.cpp
     src/eval.cpp
+    src/transposition_table.cpp
     src/attacks.cpp
     src/uci_utils.cpp
     src/logger.cpp)

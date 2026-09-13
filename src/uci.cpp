@@ -2,6 +2,7 @@
 
 #include "engine.hpp"
 #include "logger.hpp"
+#include "transposition_table.hpp"
 #include "uci_utils.hpp"
 
 #include <cctype>
@@ -78,7 +79,10 @@ void ClessUCI::handle_setoption(const std::vector<std::string> &tokens) {
   Logger::warn("setoption: no options are advertised yet");
 }
 
-void ClessUCI::handle_ucinewgame() { engine.set_fen(INITIAL_POSITION_FEN); }
+void ClessUCI::handle_ucinewgame() {
+  engine.set_fen(INITIAL_POSITION_FEN);
+  TranspositionTable::clear();
+}
 
 void ClessUCI::handle_position(const std::vector<std::string> &tokens) {
   if (tokens.size() < 2) return Logger::warn("position: requires at least one argument");
