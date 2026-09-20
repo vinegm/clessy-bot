@@ -35,12 +35,12 @@ struct SearchLimits {
   int64_t btime = -1;
   int64_t winc = 0;
   int64_t binc = 0;
+  int movestogo = 0; // 0 is sudden death
 
-  // Moves left in the current time control period; 0 means sudden death.
-  int movestogo = 0;
-
-  // "go infinite": search until stopped, whatever the clock says.
+  int mate = 0;
   bool infinite = false;
+  std::vector<Move> searchmoves;
+  int multipv = 1;
 
   int64_t move_overhead = 10;
 
@@ -62,6 +62,7 @@ struct SearchResult {
   int score = 0; // from the side to move's perspective
   int depth = 0;
   int seldepth = 0;
+  int multipv = 1;
 
   uint64_t nodes = 0;
   int64_t elapsed_ms = 0;
@@ -69,7 +70,6 @@ struct SearchResult {
   std::vector<Move> pv;
 };
 
-// Called after each completed iteration of iterative deepening.
 using SearchInfoCallback = std::function<void(const SearchResult &)>;
 
 /**
@@ -82,8 +82,8 @@ using SearchInfoCallback = std::function<void(const SearchResult &)>;
  * pondering flag clears. The position is restored before returning.
  *
  * @param pos The position to search
- * @param limits Depth and clock limits
- * @param on_iteration Optional callback fired for each completed iteration
+ * @param limits Depth, clock and root-move limits
+ * @param on_iteration Optional callback fired for each reported line
  * @param control Optional stop/ponder handle owned by the caller
  * @return Best line of the last completed iteration
  */

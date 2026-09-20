@@ -346,6 +346,23 @@ SearchResult run_search(
 
   MoveList root_moves = generator.generate_legal_moves(pos);
 
+  // "go searchmoves" restricts the root without changing anything below it.
+  // Moves the position does not have are dropped rather than refused, and a
+  // list that leaves nothing behind is ignored so a move always comes back.
+  if (!limits.searchmoves.empty()) {
+    MoveList restricted;
+    for (const Move &move : root_moves) {
+      for (const Move &wanted : limits.searchmoves) {
+        if (move != wanted) continue;
+
+        restricted.add_move(move);
+        break;
+      }
+    }
+
+    if (!restricted.empty()) root_moves = restricted;
+  }
+
   SearchResult result;
   if (root_moves.empty()) return result;
 
@@ -357,52 +374,73 @@ SearchResult run_search(
 
   int max_depth = std::clamp(limits.depth, 1, MAX_SEARCH_DEPTH);
 
+  // NOTE: the mating ply still needs depth left to see the empty move list
+  if (limits.mate > 0) {
+    max_depth = std::min(max_depth, std::clamp(2 * limits.mate, 1, MAX_SEARCH_DEPTH));
+  }
+
+  int lines = std::clamp(limits.multipv, 1, root_moves.count);
+
   for (int depth = 1; depth <= max_depth; depth++) {
     // NOTE: depth 1 always finishes, so a best move always exists
     searcher.time_checks_enabled = depth > 1;
     searcher.seldepth = 0;
 
-    SearchResult current;
-    current.depth = depth;
+    std::vector<SearchResult> iteration;
+    std::vector<Move> claimed;
 
-    int alpha = -INFINITE_SCORE;
-    bool has_move = false;
+    for (int line = 0; line < lines; line++) {
+      SearchResult current;
+      current.depth = depth;
+      current.multipv = line + 1;
 
-    for (const Move &move : root_moves) {
-      pos.make_move(move);
-      int score = -searcher.negamax(depth - 1, 1, -INFINITE_SCORE, -alpha);
-      pos.undo_move();
-      if (searcher.stopped) break;
+      int alpha = -INFINITE_SCORE;
+      bool has_move = false;
 
-      if (!has_move || score > current.score) {
+      for (const Move &move : root_moves) {
+        if (std::find(claimed.begin(), claimed.end(), move) != claimed.end()) continue;
+
+        pos.make_move(move);
+        int score = -searcher.negamax(depth - 1, 1, -INFINITE_SCORE, -alpha);
+        pos.undo_move();
+        if (searcher.stopped) break;
+
+        alpha = std::max(alpha, score);
+
+        if (has_move && score <= current.score) continue;
+
         has_move = true;
         current.score = score;
         current.best_move = move;
-
-        // The root move heads the line; the rest is whatever the child stored.
         current.pv.assign(1, move);
         searcher.append_pv(current.pv, 1);
       }
-      alpha = std::max(alpha, score);
+
+      if (searcher.stopped || !has_move) break;
+
+      current.seldepth = std::max(searcher.seldepth, depth);
+      current.nodes = searcher.nodes;
+      current.elapsed_ms =
+          std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - start).count();
+
+      claimed.push_back(current.best_move);
+      iteration.push_back(current);
     }
 
-    if (searcher.stopped || !has_move) break; // discard the partial iteration
+    if (searcher.stopped || iteration.empty()) break;
 
-    current.seldepth = std::max(searcher.seldepth, depth);
-    current.nodes = searcher.nodes;
-    current.elapsed_ms =
-        std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - start).count();
+    result = iteration.front();
 
-    result = current;
-    if (on_iteration) on_iteration(result);
+    for (const SearchResult &line : iteration) {
+      if (on_iteration) on_iteration(line);
+    }
 
-    // Search what this iteration liked first on the next one.
-    Move *found = std::find(root_moves.begin(), root_moves.end(), result.best_move);
-    if (found != root_moves.end()) std::rotate(root_moves.begin(), found, found + 1);
+    for (int i = static_cast<int>(iteration.size()) - 1; i >= 0; i--) {
+      Move *found = std::find(root_moves.begin(), root_moves.end(), iteration[i].best_move);
+      if (found != root_moves.end()) std::rotate(root_moves.begin(), found, found + 1);
+    }
 
     if (limits.infinite) continue;
-
-    // Mate found: deeper iterations cannot improve on it.
     if (is_mate_score(result.score)) break;
     if (searcher.out_of_budget()) break;
   }

@@ -18,6 +18,9 @@ public:
 private:
   ClessEngine engine;
 
+  // Options, read on the search thread only while it is being started.
+  int multipv = 1;
+
   std::thread search_thread;
   SearchControl control;
 
@@ -61,6 +64,7 @@ private:
 
   static char piece_to_char(Piece piece);
   static bool is_command(const std::string &token);
+  static bool is_go_keyword(const std::string &token);
   bool resolve_move(const std::string &uci, Move &move) const;
   void process_moves(const std::vector<std::string> &tokens, size_t start_index);
 };
