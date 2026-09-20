@@ -87,11 +87,16 @@ public:
       const SearchLimits &limits,
       SearchControl *control,
       Clock::time_point start
-  ) : pos(pos), control(control), node_limit(limits.infinite ? -1 : limits.nodes) {
-    // "infinite" ignores the clock outright.
-    budget_ms = (!limits.infinite && limits.has_clock()) ? time_budget_ms(limits, pos.to_move) : -1;
+  ) : pos(pos), control(control) {
+    if (!limits.infinite) node_limit = limits.nodes;
+    if (!limits.infinite && limits.has_clock()) budget_ms = time_budget_ms(limits, pos.to_move);
+
     has_deadline = budget_ms >= 0;
-    deadline = start + std::chrono::milliseconds(has_deadline ? budget_ms : 0);
+    deadline = start;
+    if (has_deadline) deadline += std::chrono::milliseconds(budget_ms);
+
+    // NOTE: a ponder search only arms its deadline on ponderhit
+    ponder_active = control != nullptr && control->pondering.load(std::memory_order_relaxed);
   }
 
   uint64_t nodes = 0;
@@ -104,7 +109,7 @@ public:
     if (control && control->stop.load(std::memory_order_relaxed)) return true;
     if (node_limit >= 0 && nodes >= static_cast<uint64_t>(node_limit)) return true;
 
-    return has_deadline && Clock::now() >= deadline;
+    return has_deadline && !ponder_active && Clock::now() >= deadline;
   }
 
   int quiescence(int alpha, int beta, int ply) {
@@ -220,6 +225,10 @@ private:
   int64_t budget_ms = -1;
   bool has_deadline = false;
 
+  // Cleared the first time the search notices "ponderhit"; that is when the
+  // deadline is armed, since only then is the engine spending its own time.
+  bool ponder_active = false;
+
   Move killers[MAX_SEARCH_DEPTH][2]{};
   int history[2][64][64]{}; // [side to move][from][to]
 
@@ -290,6 +299,13 @@ private:
     }
 
     if (!time_checks_enabled) return true;
+
+    if (ponder_active) {
+      if (control && control->pondering.load(std::memory_order_relaxed)) return true;
+
+      ponder_active = false;
+      if (has_deadline) deadline = Clock::now() + std::chrono::milliseconds(budget_ms);
+    }
 
     if (node_limit >= 0 && nodes >= static_cast<uint64_t>(node_limit)) {
       stopped = true;
