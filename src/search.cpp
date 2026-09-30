@@ -2,6 +2,7 @@
 
 #include "eval.hpp"
 #include "move_gen.hpp"
+#include "nnue.hpp"
 #include "position.hpp"
 #include "transposition_table.hpp"
 
@@ -9,6 +10,10 @@
 #include <chrono>
 
 using Clock = std::chrono::steady_clock;
+
+int evaluate(const Position &pos) {
+  return NNUE::is_loaded() ? NNUE::evaluate(pos) : Evaluator().evaluate(pos);
+}
 
 // NOTE: the king sits above the queen so it sorts last as an attacker
 constexpr int ORDER_VALUE[7] = {0, 100, 320, 330, 500, 900, 1000};
@@ -118,7 +123,7 @@ public:
 
     // Standing pat: the side to move is never forced to capture, so the
     // static score is a lower bound on what this node is worth.
-    int best = evaluator.evaluate(pos);
+    int best = evaluate(pos);
     if (best >= beta) return best;
     alpha = std::max(alpha, best);
 

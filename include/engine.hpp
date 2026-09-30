@@ -3,6 +3,7 @@
 #include "chess_types.hpp"
 #include "eval.hpp"
 #include "move_gen.hpp"
+#include "nnue.hpp"
 #include "position.hpp"
 #include "search.hpp"
 
@@ -27,7 +28,7 @@ public:
 
   MoveList get_legal_moves() const;
   MoveList get_legal_moves_from(Square square) const;
-  int evaluate() const { return evaluator.evaluate(pos); }
+  int evaluate() const { return NNUE::is_loaded() ? NNUE::evaluate(pos) : evaluator.evaluate(pos); }
 
   SearchResult search(
       const SearchLimits &limits,

@@ -57,6 +57,7 @@ void ClessUCI::call_command(const std::vector<std::string> &leading_tokens) {
   if (command == "ucinewgame") return handle_ucinewgame();
   if (command == "position") return handle_position(tokens);
   if (command == "go") return handle_go(tokens);
+  if (command == "nnue") return handle_nnue(tokens);
   if (command == "d") return handle_d();
   if (command == "eval") return handle_eval();
   if (command == "quit" || command == "exit") {
@@ -81,6 +82,7 @@ void ClessUCI::handle_uci() {
   Logger::respond("option name Ponder type check default false");
   Logger::respond("option name MultiPV type spin default 1 min 1 max ", MULTIPV_MAX);
   Logger::respond("option name Move Overhead type spin default 10 min 0 max ", MOVE_OVERHEAD_MAX);
+  Logger::respond("option name EvalFile type string default <empty>");
 
   Logger::respond("uciok");
 }
@@ -120,8 +122,6 @@ void ClessUCI::handle_setoption(const std::vector<std::string> &tokens) {
     }
   }
 
-  // Resizing the table under a running search would pull the ground out from
-  // under it.
   stop_search();
 
   apply_option(name, value);
@@ -147,6 +147,14 @@ void ClessUCI::apply_option(const std::string &name, const std::string &value) {
 
   if (key == "move overhead") {
     move_overhead = std::clamp<int64_t>(std::stoll(value), 0, MOVE_OVERHEAD_MAX);
+    return;
+  }
+
+  if (key == "evalfile") {
+    // The advertised default; treat it as "no network" rather than a path.
+    if (value.empty() || value == "<empty>") return;
+
+    load_network(value);
     return;
   }
 
@@ -457,10 +465,29 @@ void ClessUCI::handle_d() {
   Logger::respond("Legal moves (", legal_moves.count, "): ", moves_str);
 }
 
+bool ClessUCI::load_network(const std::string &path) {
+  if (!NNUE::load(path)) return false;
+
+  // NOTE: stored scores came from the previous evaluation
+  TranspositionTable::clear();
+  return true;
+}
+
+void ClessUCI::handle_nnue(const std::vector<std::string> &tokens) {
+  if (tokens.size() < 2) return Logger::error("nnue: requires a file path");
+
+  stop_search();
+
+  if (!load_network(tokens[1])) return;
+
+  Logger::respond("Network loaded: ", tokens[1]);
+}
+
 void ClessUCI::handle_eval() {
   stop_search();
 
-  Logger::respond("Eval (stm, cp): ", engine.evaluate());
+  std::string kind = NNUE::is_loaded() ? "nnue" : "hce";
+  Logger::respond("Eval (stm, cp, ", kind, "): ", engine.evaluate());
 }
 
 bool ClessUCI::resolve_move(const std::string &uci, Move &move) const {
@@ -516,5 +543,5 @@ bool ClessUCI::is_command(const std::string &token) {
   return token == "uci" || token == "debug" || token == "isready" || token == "setoption"
          || token == "register" || token == "ucinewgame" || token == "position" || token == "go"
          || token == "stop" || token == "ponderhit" || token == "quit" || token == "exit"
-         || token == "d" || token == "eval";
+         || token == "d" || token == "nnue" || token == "eval";
 }
