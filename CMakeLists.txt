@@ -11,6 +11,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(SOURCES
     src/main.cpp
     src/uci.cpp
+    src/datagen.cpp
     src/engine.cpp
     src/position.cpp
     src/move_gen.cpp
