@@ -4,10 +4,15 @@
 
 class Position;
 
-class Evaluator {
+class Eval {
 public:
-  int evaluate(const Position &position) const;
+  Eval() = delete;
+
+  // NOTE: from the side to move's perspective
+  static int evaluate(const Position &position);
+  static const char *source_name();
 
 private:
-  int piece_score(PieceType type, Color color, Square square) const;
+  static int evaluate_hce(const Position &position);
+  static int piece_score(PieceType type, Color color, Square square);
 };

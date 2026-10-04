@@ -2,7 +2,6 @@
 
 #include "eval.hpp"
 #include "move_gen.hpp"
-#include "nnue.hpp"
 #include "position.hpp"
 #include "transposition_table.hpp"
 
@@ -10,10 +9,6 @@
 #include <chrono>
 
 using Clock = std::chrono::steady_clock;
-
-int evaluate(const Position &pos) {
-  return NNUE::is_loaded() ? NNUE::evaluate(pos) : Evaluator().evaluate(pos);
-}
 
 // NOTE: the king sits above the queen so it sorts last as an attacker
 constexpr int ORDER_VALUE[7] = {0, 100, 320, 330, 500, 900, 1000};
@@ -109,7 +104,6 @@ public:
   bool stopped = false;
   bool time_checks_enabled = false;
 
-  /// @brief Whether another iteration would only be thrown away.
   bool out_of_budget() {
     if (control && control->stop.load(std::memory_order_relaxed)) return true;
     if (node_limit >= 0 && nodes >= static_cast<uint64_t>(node_limit)) return true;
@@ -121,13 +115,11 @@ public:
     if (ply > seldepth) seldepth = ply;
     if (!count_node()) return 0;
 
-    // Standing pat: the side to move is never forced to capture, so the
-    // static score is a lower bound on what this node is worth.
-    int best = evaluate(pos);
+    int best = Eval::evaluate(pos);
     if (best >= beta) return best;
     alpha = std::max(alpha, best);
 
-    MoveList moves = generator.generate_legal_captures(pos);
+    MoveList moves = MoveGenerator::generate_legal_captures(pos);
     order_moves(pos, moves);
 
     for (const Move &move : moves) {
@@ -179,8 +171,10 @@ public:
       }
     }
 
-    MoveList moves = generator.generate_legal_moves(pos);
-    if (moves.empty()) { return generator.is_in_check(pos, pos.to_move) ? -(MATE_SCORE - ply) : 0; }
+    MoveList moves = MoveGenerator::generate_legal_moves(pos);
+    if (moves.empty()) {
+      return MoveGenerator::is_in_check(pos, pos.to_move) ? -(MATE_SCORE - ply) : 0;
+    }
 
     order_quiet_aware(moves, hash_move, ply);
 
@@ -221,8 +215,6 @@ public:
 
 private:
   Position &pos;
-  MoveGenerator generator{};
-  Evaluator evaluator{};
   SearchControl *control;
   int64_t node_limit;
 
@@ -347,26 +339,9 @@ SearchResult run_search(
     SearchControl *control
 ) {
   Clock::time_point start = Clock::now();
-  MoveGenerator generator;
 
-  MoveList root_moves = generator.generate_legal_moves(pos);
-
-  // "go searchmoves" restricts the root without changing anything below it.
-  // Moves the position does not have are dropped rather than refused, and a
-  // list that leaves nothing behind is ignored so a move always comes back.
-  if (!limits.searchmoves.empty()) {
-    MoveList restricted;
-    for (const Move &move : root_moves) {
-      for (const Move &wanted : limits.searchmoves) {
-        if (move != wanted) continue;
-
-        restricted.add_move(move);
-        break;
-      }
-    }
-
-    if (!restricted.empty()) root_moves = restricted;
-  }
+  MoveList root_moves =
+      restrict_root_moves(MoveGenerator::generate_legal_moves(pos), limits.searchmoves);
 
   SearchResult result;
   if (root_moves.empty()) return result;

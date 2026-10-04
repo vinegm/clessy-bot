@@ -10,7 +10,7 @@
 MoveList ClessEngine::get_legal_moves() const {
   if (legal_cache_valid) return legal_moves;
 
-  legal_moves = generator.generate_legal_moves(pos);
+  legal_moves = MoveGenerator::generate_legal_moves(pos);
   legal_cache_valid = true;
 
   return legal_moves;
@@ -18,7 +18,7 @@ MoveList ClessEngine::get_legal_moves() const {
 
 MoveList ClessEngine::get_legal_moves_from(Square square) const {
   if (!legal_cache_valid) {
-    legal_moves = generator.generate_legal_moves(pos);
+    legal_moves = MoveGenerator::generate_legal_moves(pos);
     legal_cache_valid = true;
   }
 

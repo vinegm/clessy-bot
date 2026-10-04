@@ -1,5 +1,6 @@
 #include "datagen.hpp"
 
+#include "eval.hpp"
 #include "logger.hpp"
 #include "nnue.hpp"
 #include "transposition_table.hpp"
@@ -179,14 +180,14 @@ bool ClessDatagen::setup_opening() {
   pos.set_fen(INITIAL_POSITION_FEN);
 
   for (int i = 0; i < options.random_plies; i++) {
-    MoveList moves = generator.generate_legal_moves(pos);
+    MoveList moves = MoveGenerator::generate_legal_moves(pos);
     if (moves.empty()) return false;
 
     std::uniform_int_distribution<int> pick(0, moves.count - 1);
     pos.make_move(moves[pick(rng)]);
   }
 
-  if (generator.generate_legal_moves(pos).empty()) return false;
+  if (MoveGenerator::generate_legal_moves(pos).empty()) return false;
   if (options.opening_max_score <= 0) return true;
 
   // NOTE: random moves often leave the game already decided, which teaches the net nothing
@@ -205,20 +206,17 @@ ClessDatagen::Outcome ClessDatagen::play_game() {
   Color streak_winner = WHITE;
 
   for (int ply = 0; ply < options.max_plies; ply++) {
-    MoveList moves = generator.generate_legal_moves(pos);
+    MoveList moves = MoveGenerator::generate_legal_moves(pos);
 
-    // run_search reads moves[0] before doing anything else, so a terminal
-    // position must never reach it.
-    if (moves.empty()) {
-      if (!generator.is_in_check(pos, pos.to_move)) return Outcome::Draw;
-      return (pos.to_move == WHITE) ? Outcome::BlackWin : Outcome::WhiteWin;
-    }
+    // NOTE: run_search reads moves[0], so a terminal position must never reach it
+    if (moves.empty() && !MoveGenerator::is_in_check(pos, pos.to_move)) return Outcome::Draw;
+    if (moves.empty()) return win_for(opposite_color(pos.to_move));
 
     if (pos.halfmove_clock >= 100) return Outcome::Draw;
     if (repetition_count() >= 3) return Outcome::Draw;
     if (insufficient_material()) return Outcome::Draw;
 
-    bool in_check = generator.is_in_check(pos, pos.to_move);
+    bool in_check = MoveGenerator::is_in_check(pos, pos.to_move);
     SearchResult result = run_search(pos, limits);
 
     // NOTE: the trainer fits a static eval, so tactical positions are noise
@@ -327,7 +325,7 @@ int ClessDatagen::run(int argc, char **argv) {
       " games, ",
       options.nodes,
       " nodes/move, eval ",
-      NNUE::is_loaded() ? "nnue" : "hce"
+      Eval::source_name()
   );
 
   started = std::chrono::steady_clock::now();

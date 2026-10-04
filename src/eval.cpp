@@ -1,6 +1,7 @@
 #include "eval.hpp"
 
 #include "chess_types.hpp"
+#include "nnue.hpp"
 #include "position.hpp"
 
 // NOTE: indexed by PieceType.
@@ -94,7 +95,7 @@ constexpr const int *PST[7] = {
     KING_PST,
 };
 
-int Evaluator::evaluate(const Position &position) const {
+int Eval::evaluate_hce(const Position &position) {
   int score = 0; // from white's point of view
 
   for (int square = 0; square < 64; square++) {
@@ -117,8 +118,20 @@ int Evaluator::evaluate(const Position &position) const {
   return score;
 }
 
-int Evaluator::piece_score(PieceType type, Color color, Square square) const {
+int Eval::piece_score(PieceType type, Color color, Square square) {
   if (color == BLACK) return PIECE_VALUE[type] + PST[type][square];
 
   return PIECE_VALUE[type] + PST[type][square ^ 56];
+}
+
+int Eval::evaluate(const Position &position) {
+  if (NNUE::is_loaded()) return NNUE::evaluate(position);
+
+  return evaluate_hce(position);
+}
+
+const char *Eval::source_name() {
+  if (NNUE::is_loaded()) return "nnue";
+
+  return "hce";
 }

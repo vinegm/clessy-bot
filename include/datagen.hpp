@@ -13,36 +13,8 @@
 #include <string>
 #include <vector>
 
-/**
- * @brief Self-play training-data generation, driven from argv rather than UCI.
- *
- * Datagen lives inside the engine instead of in an external script because the
- * cost is dominated by search: a driver speaking UCI pays a process spawn, a
- * text round-trip and a move re-parse for every ply, and cannot reuse the
- * transposition table across a game. It also needs a full chess rules
- * implementation of its own just to decide when a game has ended, which is
- * something this binary already has.
- *
- * A run is one long-lived object rather than a chain of free functions: the
- * options, the RNG, the board, the output stream and the running totals are
- * all read by nearly every step, and threading them through arguments buys
- * nothing.
- *
- * The output is what `clessy-nnue` consumes, in either of two formats holding
- * the same samples — `binpack.hpp` for the default, or one text line per
- * position, `<fen>;<score_cp>;<result>`, with both the score and the result
- * from the side to move. `clessy_nnue/dataset.py` is the other end of that
- * contract; changing a field here means changing it there.
- */
 class ClessDatagen {
 public:
-  /**
-   * @brief Parse options from argv and generate until the run is done.
-   *
-   * @param argc Argument count after the "datagen" subcommand
-   * @param argv Arguments after the "datagen" subcommand
-   * @return Process exit status
-   */
   int run(int argc, char **argv);
 
 private:
@@ -75,16 +47,12 @@ private:
     int adjudicate_plies = 4;
     int max_plies = 400;
 
+    uint64_t seed = 0; // 0 picks a random one
     size_t hash_mb = 16;
-    uint64_t seed = 0; // 0 means "draw one from the system"
     bool append = false;
   };
 
-  /// @brief One ply of a played game.
-  ///
-  /// The binpack format needs every move to keep its chain intact, so plies
-  /// the filter rejected are recorded too and marked. Only a sample carries a
-  /// FEN, since only the text writer reads one and building it is not free.
+  // NOTE: binpack replays every move, so rejected plies are recorded too
   struct PlyRecord {
     std::string fen; // only set on samples, only the text format reads it
     Move move{};
@@ -100,9 +68,6 @@ private:
 
   Options options;
 
-  // The generator is stateless and the board is reused between games, so both
-  // outlive any one of them.
-  MoveGenerator generator;
   Position pos{INITIAL_POSITION_FEN};
   std::mt19937_64 rng{std::random_device{}()};
 
@@ -123,13 +88,8 @@ private:
   static void usage();
   bool parse_options(int argc, char **argv);
 
-  /// @brief Open the output file, refusing to clobber a finished dataset.
   bool open_output();
-
-  /// @brief Put the board in a random opening, or report an unusable attempt.
   bool setup_opening();
-
-  /// @brief Play the board out, recording every ply played.
   Outcome play_game();
 
   void write_game(const std::string &start_fen, Outcome outcome);
@@ -137,10 +97,7 @@ private:
 
   SearchLimits search_limits() const;
 
-  /// @brief Whether neither side can deliver mate with the material left.
   bool insufficient_material() const;
-
-  /// @brief How many times the position on the board has occurred this game.
   int repetition_count() const;
 
   static const char *result_for(Outcome outcome, Color side_to_move);

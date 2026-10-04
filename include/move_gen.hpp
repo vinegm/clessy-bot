@@ -39,55 +39,52 @@ struct Masks {
 
 class MoveGenerator {
 public:
-  MoveList generate_pseudo_legal_moves(const Position &position) const;
-  MoveList generate_legal_moves(const Position &position) const;
+  MoveGenerator() = delete;
 
-  MoveList generate_legal_captures(const Position &position) const;
+  static MoveList generate_legal_moves(const Position &position);
+  static MoveList generate_pseudo_legal_moves(const Position &position);
 
-  bool is_in_check(const Position &position, Color color) const;
+  static MoveList generate_legal_captures(const Position &position);
+
+  static bool is_in_check(const Position &position, Color color);
 
 private:
   using SliderAttacks = uint64_t (*)(int square, uint64_t occupancy);
 
-  int generate_moves(
-      const Position &position,
-      Move *moves,
-      const Masks &masks,
-      uint64_t targets
-  ) const;
+  static MoveList filter_en_passant_legality(const Position &position, const MoveList &pseudo);
+  static int
+      generate_moves(const Position &position, Move *moves, const Masks &masks, uint64_t targets);
 
   template<Color Us>
-  int generate_pawn_moves(
+  static int generate_pawn_moves(
       const Position &position,
       Move *moves,
       const Masks &masks,
       uint64_t targets
-  ) const;
+  );
 
   template<PieceType PieceT>
-  int generate_piece_moves(
+  static int generate_piece_moves(
       const Position &position,
       Move *moves,
       const Masks &masks,
       uint64_t targets
-  ) const;
+  );
 
-  int generate_castling_moves(const Position &position, Move *moves, const Masks &masks) const;
+  static int generate_castling_moves(const Position &position, Move *moves, const Masks &masks);
 
-  Masks generate_masks(const Position &position) const;
-  uint64_t attack_map(const Position &position, Color color, uint64_t occupancy) const;
-  void find_checkers(const Position &position, Square king_square, Masks &masks) const;
-  void find_pins(
+  static Masks generate_masks(const Position &position);
+  static uint64_t attack_map(const Position &position, Color color, uint64_t occupancy);
+  static void find_checkers(const Position &position, Square king_square, Masks &masks);
+  static void find_pins(
       const Position &position,
       Square king_square,
       uint64_t snipers,
       SliderAttacks attacks,
       Masks &masks
-  ) const;
+  );
 
-  MoveList filter_en_passant_legality(const Position &position, const MoveList &pseudo) const;
-
-  bool is_legal_move(Position &position, const Move &move) const;
-  bool is_square_attacked(const Position &position, Square square, Color by_color) const;
-  Square find_king(const Position &position, Color color) const;
+  static bool is_legal_move(Position &position, const Move &move);
+  static bool is_square_attacked(const Position &position, Square square, Color by_color);
+  static Square find_king(const Position &position, Color color);
 };

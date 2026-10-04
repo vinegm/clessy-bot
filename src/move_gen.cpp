@@ -6,7 +6,12 @@
 
 #include <cstdint>
 
-MoveList MoveGenerator::generate_pseudo_legal_moves(const Position &position) const {
+MoveList MoveGenerator::generate_legal_moves(const Position &position) {
+  // NOTE: the masks already make every move legal except en passant
+  return filter_en_passant_legality(position, generate_pseudo_legal_moves(position));
+}
+
+MoveList MoveGenerator::generate_pseudo_legal_moves(const Position &position) {
   MoveList move_list;
   const Masks masks = generate_masks(position);
 
@@ -16,12 +21,7 @@ MoveList MoveGenerator::generate_pseudo_legal_moves(const Position &position) co
   return move_list;
 }
 
-MoveList MoveGenerator::generate_legal_moves(const Position &position) const {
-  // NOTE: the masks already make every move legal except en passant
-  return filter_en_passant_legality(position, generate_pseudo_legal_moves(position));
-}
-
-MoveList MoveGenerator::generate_legal_captures(const Position &position) const {
+MoveList MoveGenerator::generate_legal_captures(const Position &position) {
   MoveList move_list;
   const Masks masks = generate_masks(position);
 
@@ -37,7 +37,7 @@ int MoveGenerator::generate_moves(
     Move *moves,
     const Masks &masks,
     uint64_t targets
-) const {
+) {
   Move *start = moves;
 
   moves += generate_piece_moves<KING>(position, moves, masks, targets);
@@ -57,10 +57,8 @@ int MoveGenerator::generate_moves(
   return moves - start;
 }
 
-MoveList MoveGenerator::filter_en_passant_legality(
-    const Position &position,
-    const MoveList &pseudo
-) const {
+MoveList
+    MoveGenerator::filter_en_passant_legality(const Position &position, const MoveList &pseudo) {
   if (!position.en_passant_square.has_value()) return pseudo;
 
   Position temp_position = position;
@@ -81,7 +79,7 @@ int MoveGenerator::generate_pawn_moves(
     Move *moves,
     const Masks &masks,
     uint64_t targets
-) const {
+) {
   Move *start = moves;
   constexpr Color Them = (Us == WHITE) ? BLACK : WHITE;
   constexpr int Forward = (Us == WHITE) ? NORTH : SOUTH;
@@ -192,7 +190,7 @@ int MoveGenerator::generate_piece_moves(
     Move *moves,
     const Masks &masks,
     uint64_t targets
-) const {
+) {
   Move *start = moves;
   const Color us = position.to_move;
   const Color them = opposite_color(us);
@@ -240,7 +238,7 @@ int MoveGenerator::generate_castling_moves(
     const Position &position,
     Move *moves,
     const Masks &masks
-) const {
+) {
   Move *start = moves;
   const Color us = position.to_move;
 
@@ -282,7 +280,7 @@ int MoveGenerator::generate_castling_moves(
   return moves - start;
 }
 
-Masks MoveGenerator::generate_masks(const Position &position) const {
+Masks MoveGenerator::generate_masks(const Position &position) {
   const Color us = position.to_move;
   const Color them = opposite_color(us);
   const Square king_square = find_king(position, us);
@@ -300,6 +298,7 @@ Masks MoveGenerator::generate_masks(const Position &position) const {
   if (!masks.checkers) masks.check_mask = ~0ULL;
 
   const uint64_t queens = position.get_bb(them, QUEEN);
+
   find_pins(position, king_square, position.get_bb(them, ROOK) | queens, get_rook_attacks, masks);
   find_pins(
       position,
@@ -312,8 +311,7 @@ Masks MoveGenerator::generate_masks(const Position &position) const {
   return masks;
 }
 
-uint64_t
-    MoveGenerator::attack_map(const Position &position, Color color, uint64_t occupancy) const {
+uint64_t MoveGenerator::attack_map(const Position &position, Color color, uint64_t occupancy) {
   uint64_t attacks = 0;
 
   uint64_t pawns = position.get_bb(color, PAWN);
@@ -344,19 +342,16 @@ uint64_t
   return attacks;
 }
 
-void MoveGenerator::find_checkers(
-    const Position &position,
-    Square king_square,
-    Masks &masks
-) const {
+void MoveGenerator::find_checkers(const Position &position, Square king_square, Masks &masks) {
   const Color us = position.to_move;
   const Color them = opposite_color(us);
   const uint64_t all_pieces = position.occupancy[ANY_COLOR];
   const uint64_t king_bb = square_to_bit(king_square);
   const uint64_t queens = position.get_bb(them, QUEEN);
 
-  uint64_t diagonal_checkers =
-      get_bishop_attacks(king_square, all_pieces) & (position.get_bb(them, BISHOP) | queens);
+  uint64_t diagonal_attackers = position.get_bb(them, BISHOP) | queens;
+  uint64_t diagonal_checkers = get_bishop_attacks(king_square, all_pieces) & diagonal_attackers;
+
   while (diagonal_checkers) {
     const Square checker = pop_lsb_square(diagonal_checkers);
     const uint64_t checker_bb = square_to_bit(checker);
@@ -368,8 +363,9 @@ void MoveGenerator::find_checkers(
     masks.check_mask |= between;
   }
 
-  uint64_t straight_checkers =
-      get_rook_attacks(king_square, all_pieces) & (position.get_bb(them, ROOK) | queens);
+  uint64_t straight_attackers = position.get_bb(them, ROOK) | queens;
+  uint64_t straight_checkers = get_rook_attacks(king_square, all_pieces) & straight_attackers;
+
   while (straight_checkers) {
     const Square checker = pop_lsb_square(straight_checkers);
     const uint64_t checker_bb = square_to_bit(checker);
@@ -392,7 +388,7 @@ void MoveGenerator::find_pins(
     uint64_t snipers,
     SliderAttacks attacks,
     Masks &masks
-) const {
+) {
   const uint64_t our_occupancy = position.occupancy[position.to_move];
   const uint64_t king_bb = square_to_bit(king_square);
 
@@ -414,11 +410,7 @@ void MoveGenerator::find_pins(
   }
 }
 
-bool MoveGenerator::is_square_attacked(
-    const Position &position,
-    Square square,
-    Color enemy_color
-) const {
+bool MoveGenerator::is_square_attacked(const Position &position, Square square, Color enemy_color) {
   const uint64_t all_pieces = position.occupancy[ANY_COLOR];
 
   if (PAWN_ATTACKS[opposite_color(enemy_color)][square] & position.get_bb(enemy_color, PAWN)) {
@@ -444,11 +436,11 @@ bool MoveGenerator::is_square_attacked(
   return false;
 }
 
-bool MoveGenerator::is_in_check(const Position &position, Color color) const {
+bool MoveGenerator::is_in_check(const Position &position, Color color) {
   return is_square_attacked(position, find_king(position, color), opposite_color(color));
 }
 
-bool MoveGenerator::is_legal_move(Position &position, const Move &move) const {
+bool MoveGenerator::is_legal_move(Position &position, const Move &move) {
   const Color side = position.to_move;
 
   position.make_move(move);
@@ -458,6 +450,6 @@ bool MoveGenerator::is_legal_move(Position &position, const Move &move) const {
   return !in_check;
 }
 
-Square MoveGenerator::find_king(const Position &position, Color color) const {
+Square MoveGenerator::find_king(const Position &position, Color color) {
   return lsb_square(position.get_bb(color, KING));
 }
