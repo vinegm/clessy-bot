@@ -77,6 +77,7 @@ private:
   void pack_position(const Position &pos);
 
   static uint16_t promotion_code(PieceType type);
+  static uint16_t special_code(const Move &move);
 
   static uint16_t encode_move(const Move &move);
 };

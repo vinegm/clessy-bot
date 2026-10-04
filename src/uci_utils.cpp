@@ -51,9 +51,9 @@ Square uci_to_square(const std::string &uci) {
 }
 
 std::string move_to_uci(const Move &move) {
-  std::string result = square_to_uci(move.from) + square_to_uci(move.to);
+  std::string result = square_to_uci(move.from()) + square_to_uci(move.to());
 
-  if (move.is_promotion()) { result += piece_type_to_char(move.promotion_piece); }
+  if (move.is_promotion()) { result += piece_type_to_char(move.promotion_piece()); }
 
   return result;
 }
@@ -103,19 +103,10 @@ Move uci_to_move(const std::string &uci) {
   Square from = uci_to_square(uci.substr(0, 2));
   Square to = uci_to_square(uci.substr(2, 2));
 
-  Move move;
-  move.from = from;
-  move.to = to;
-  move.type = NORMAL_MOVE;
-  move.promotion_piece = NO_TYPE;
+  // NOTE: text carries no flags, the caller matches it against the legal moves
+  if (uci.length() == 5) { return Move(from, to, PROMOTION, char_to_piece_type(uci[4])); }
 
-  // Check for promotion
-  if (uci.length() == 5) {
-    move.type = static_cast<MoveType>(move.type | PROMOTION);
-    move.promotion_piece = char_to_piece_type(uci[4]);
-  }
-
-  return move;
+  return Move(from, to);
 }
 
 bool is_command(const std::string &token) {

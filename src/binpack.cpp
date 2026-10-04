@@ -13,20 +13,20 @@ uint16_t BinpackWriter::promotion_code(PieceType type) {
   }
 }
 
+uint16_t BinpackWriter::special_code(const Move &move) {
+  if (move.is_castling()) return 1;
+  if (move.is_en_passant()) return 2;
+  if (move.is_promotion()) return 3;
+
+  return 0;
+}
+
 uint16_t BinpackWriter::encode_move(const Move &move) {
-  uint16_t special = 0;
-  if (move.is_castling()) {
-    special = 1;
-  } else if (move.is_en_passant()) {
-    special = 2;
-  } else if (move.is_promotion()) {
-    special = 3;
-  }
+  uint16_t promotion = 0;
+  if (move.is_promotion()) promotion = promotion_code(move.promotion_piece());
 
-  uint16_t promotion = move.is_promotion() ? promotion_code(move.promotion_piece) : 0;
-
-  return static_cast<uint16_t>(move.from) | static_cast<uint16_t>(move.to) << 6 | promotion << 12
-         | special << 14;
+  return static_cast<uint16_t>(move.from()) | static_cast<uint16_t>(move.to()) << 6
+         | promotion << 12 | special_code(move) << 14;
 }
 
 void BinpackWriter::put_u8(uint8_t value) { buffer.push_back(value); }
