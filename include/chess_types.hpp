@@ -146,6 +146,12 @@ struct Move {
           | pack_flags(type, promotion) << 12
       ) {}
 
+  static constexpr Move from_raw(uint16_t raw) {
+    Move move;
+    move.data = raw;
+    return move;
+  }
+
   constexpr Square from() const { return Square(data & 0x3F); }
   constexpr Square to() const { return Square((data >> 6) & 0x3F); }
   constexpr uint16_t flags() const { return data >> 12; }

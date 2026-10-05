@@ -160,14 +160,15 @@ public:
 
     Move hash_move{};
     if (const TranspositionTable::Entry *entry = TranspositionTable::probe(pos.hash)) {
-      hash_move = entry->move;
+      hash_move = entry->move();
 
       if (entry->depth >= depth) {
         int table_score = score_from_table(entry->score, ply);
+        TranspositionTable::Bound bound = entry->bound();
 
-        if (entry->bound == TranspositionTable::EXACT
-            || (entry->bound == TranspositionTable::LOWER && table_score >= beta)
-            || (entry->bound == TranspositionTable::UPPER && table_score <= alpha)) {
+        if (bound == TranspositionTable::EXACT
+            || (bound == TranspositionTable::LOWER && table_score >= beta)
+            || (bound == TranspositionTable::UPPER && table_score <= alpha)) {
           return table_score;
         }
       }
@@ -340,6 +341,8 @@ SearchResult run_search(
     SearchControl *control
 ) {
   Clock::time_point start = Clock::now();
+
+  TranspositionTable::new_search();
 
   MoveList root_moves =
       restrict_root_moves(MoveGenerator::generate_legal_moves(pos), limits.searchmoves);
