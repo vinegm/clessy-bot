@@ -1,11 +1,14 @@
 #pragma once
 
 #include "chess_types.hpp"
-#include "position.hpp"
 
 #include <cstdint>
+#include <memory>
 #include <string>
 
+class Position;
+
+// NOTE: (768 -> HIDDEN_SIZE)x2 -> CReLU -> 1, must match clessy-nnue
 class NNUE {
 public:
   NNUE() = delete;
@@ -27,25 +30,38 @@ public:
     int32_t output_bias;
   };
 
+  struct Accumulator {
+    int32_t values[2][HIDDEN_SIZE]; // [Color]
+
+    // NOTE: the network generation it was built for, 0 means not built
+    uint32_t generation = 0;
+
+    bool is_computed() const { return generation != 0; }
+  };
+
   static bool load(const std::string &path);
   static bool is_loaded();
+  static int evaluate(const Position &pos);
+
+  static void add_feature(Accumulator &accumulator, Color color, PieceType type, Square square);
+  static void remove_feature(Accumulator &accumulator, Color color, PieceType type, Square square);
 
   static constexpr int
       feature_index(Color perspective, Color color, PieceType type, Square square) {
-    int rel_color = (color == perspective) ? 0 : 1;
-    int rel_square = (perspective == WHITE) ? square : square ^ 56;
+    int relative_color = 0;
+    if (color != perspective) relative_color = 1;
 
-    return rel_color * 384 + (type - 1) * 64 + rel_square;
+    int relative_square = square;
+    if (perspective == BLACK) relative_square = square ^ 56;
+
+    return relative_color * 384 + (type - 1) * 64 + relative_square;
   }
 
-  // Evaluate a position with the loaded network.
-  // Rebuilds both accumulators from scratch (no incremental updates yet).
-  static int evaluate(const Position &pos);
-
 private:
-  // Rebuild one perspective's accumulator from the pieces on the board.
-  static void
-      accumulate(const Position &pos, Color perspective, int32_t (&accumulator)[HIDDEN_SIZE]);
+  static inline std::unique_ptr<Network> network;
+  static inline uint32_t network_generation = 0;
+
+  static void refresh(const Position &pos, Accumulator &accumulator);
 
   static constexpr int32_t crelu(int32_t value) {
     if (value < 0) return 0;

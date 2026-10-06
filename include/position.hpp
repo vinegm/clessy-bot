@@ -1,6 +1,7 @@
 #pragma once
 
 #include "chess_types.hpp"
+#include "nnue.hpp"
 
 #include <cstdint>
 #include <optional>
@@ -50,7 +51,31 @@ public:
   void make_move(const Move &move);
   void undo_move();
 
+  NNUE::Accumulator &accumulator() const { return accumulator_slot.value; }
+
 private:
+  /**
+   * Holder that drops the accumulator on copy.
+   *
+   * Copying a Position is rare and never wants the accumulator with it — the
+   * en passant legality probe copies one only to make and unmake a move on
+   * it, and never evaluates. Leaving the copy's accumulator uncomputed keeps
+   * that probe from paying for two kilobytes it would throw away, and a
+   * refresh is one call away if anyone ever does evaluate a copy.
+   */
+  struct AccumulatorSlot {
+    NNUE::Accumulator value{};
+
+    AccumulatorSlot() = default;
+    AccumulatorSlot(const AccumulatorSlot &) {}
+    AccumulatorSlot &operator=(const AccumulatorSlot &) {
+      value.generation = 0;
+      return *this;
+    }
+  };
+
+  mutable AccumulatorSlot accumulator_slot{};
+
   std::vector<UndoInfo> undo_stack{};
   uint64_t bitboards[12]{};
 
