@@ -7,17 +7,33 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 
 using Clock = std::chrono::steady_clock;
 
 // NOTE: the king sits above the queen so it sorts last as an attacker
 constexpr int ORDER_VALUE[7] = {0, 100, 320, 330, 500, 900, 1000};
 
-// Ordering buckets: TT move, then captures and promotions (MVV-LVA), then
-// killers, then quiets by history score.
 constexpr int HASH_MOVE_ORDER = 1 << 20;
 constexpr int CAPTURE_ORDER = 100000;
 constexpr int KILLER_ORDER = 99000;
+
+constexpr int MAX_REDUCED_MOVES = 64;
+
+struct LateMoveReductions {
+  int values[MAX_SEARCH_DEPTH + 1][MAX_REDUCED_MOVES]{};
+
+  LateMoveReductions() noexcept {
+    for (int depth = 1; depth <= MAX_SEARCH_DEPTH; depth++) {
+      for (int move_index = 1; move_index < MAX_REDUCED_MOVES; move_index++) {
+        values[depth][move_index] =
+            static_cast<int>(0.75 + std::log(depth) * std::log(move_index) / 2.25);
+      }
+    }
+  }
+};
+
+static const LateMoveReductions LATE_MOVE_REDUCTIONS;
 
 static int move_order_score(const Position &pos, const Move &move, const Move &hash_move) {
   if (move == hash_move) return HASH_MOVE_ORDER;
@@ -146,8 +162,11 @@ public:
     }
   }
 
-  int negamax(int depth, int ply, int alpha, int beta) {
+  // NOTE: allow_null is false right under a null move, so the search never passes twice
+  int negamax(int depth, int ply, int alpha, int beta, bool allow_null = true) {
     if (ply > seldepth) seldepth = ply;
+
+    const bool is_pv = beta - alpha > 1;
 
     if (ply < MAX_SEARCH_DEPTH) pv_length[ply] = 0;
 
@@ -162,21 +181,42 @@ public:
     if (const TranspositionTable::Entry *entry = TranspositionTable::probe(pos.hash)) {
       hash_move = entry->move();
 
-      if (entry->depth >= depth) {
-        int table_score = score_from_table(entry->score, ply);
-        TranspositionTable::Bound bound = entry->bound();
-
-        if (bound == TranspositionTable::EXACT
-            || (bound == TranspositionTable::LOWER && table_score >= beta)
-            || (bound == TranspositionTable::UPPER && table_score <= alpha)) {
-          return table_score;
-        }
+      if (entry->depth >= depth
+          && is_usable(*entry, score_from_table(entry->score, ply), alpha, beta)) {
+        return score_from_table(entry->score, ply);
       }
     }
 
+    const bool in_check = MoveGenerator::is_in_check(pos, pos.to_move);
+
     MoveList moves = MoveGenerator::generate_legal_moves(pos);
-    if (moves.empty()) {
-      return MoveGenerator::is_in_check(pos, pos.to_move) ? -(MATE_SCORE - ply) : 0;
+    if (moves.empty() && in_check) return -(MATE_SCORE - ply);
+    if (moves.empty()) return 0;
+
+    // Null move pruning: hand the opponent a free move. If the position still
+    // fails high after that, the moves actually available can only do better,
+    // so this subtree is not worth searching properly.
+    //
+    // The moves above are generated first so a stalemate cannot reach this —
+    // a position with no legal move is the purest zugzwang there is, and the
+    // assumption behind the null move fails hardest exactly there.
+    //
+    // Skipped in check, where passing is not a legal alternative to begin
+    // with, on the principal variation, where a wrong bound would propagate
+    // into the reported line, and when the side to move has only pawns left,
+    // which is where zugzwang otherwise lives.
+    if (allow_null && !is_pv && !in_check && depth >= 3 && pos.has_non_pawn_material(pos.to_move)) {
+      const int reduction = 2 + depth / 6;
+
+      pos.make_null_move();
+      int score = -negamax(depth - 1 - reduction, ply + 1, -beta, -beta + 1, false);
+      pos.undo_move();
+      if (stopped) return 0;
+
+      // A mate proved by giving the opponent a free move is not a mate. Report
+      // that the node fails high without claiming a distance that would then
+      // travel through score_to_table as if it were real.
+      if (score >= beta) return is_mate_score(score) ? beta : score;
     }
 
     order_quiet_aware(moves, hash_move, ply);
@@ -184,11 +224,13 @@ public:
     int original_alpha = alpha;
     int best = -INFINITE_SCORE;
     Move best_move = moves[0];
+    int move_index = 0;
 
     for (const Move &move : moves) {
       pos.make_move(move);
-      int score = -negamax(depth - 1, ply + 1, -beta, -alpha);
+      int score = search_move(move, depth, ply, alpha, beta, is_pv, in_check, move_index);
       pos.undo_move();
+      move_index++;
       if (stopped) return 0;
 
       if (score > best) {
@@ -219,23 +261,79 @@ public:
 private:
   Position &pos;
   SearchControl *control;
-  int64_t node_limit;
+  int64_t node_limit = -1;
 
   Clock::time_point deadline;
   int64_t budget_ms = -1;
   bool has_deadline = false;
-
-  // Cleared the first time the search notices "ponderhit"; that is when the
-  // deadline is armed, since only then is the engine spending its own time.
   bool ponder_active = false;
 
   Move killers[MAX_SEARCH_DEPTH][2]{};
-  int history[2][64][64]{}; // [side to move][from][to]
+  int history[2][64][64]{}; // [Color][from][to]
 
-  // Triangular table: row `ply` holds the best line found from that ply down,
-  // built by prepending the current move to the row below it.
+  // NOTE: row ply holds the best line from that ply down
   Move pv_table[MAX_SEARCH_DEPTH][MAX_SEARCH_DEPTH]{};
   int pv_length[MAX_SEARCH_DEPTH]{};
+
+  static bool is_usable(const TranspositionTable::Entry &entry, int score, int alpha, int beta) {
+    if (entry.bound() == TranspositionTable::EXACT) return true;
+    if (entry.bound() == TranspositionTable::LOWER) return score >= beta;
+    if (entry.bound() == TranspositionTable::UPPER) return score <= alpha;
+
+    return false;
+  }
+
+  // NOTE: the position is already past the move
+  int search_move(
+      const Move &move,
+      int depth,
+      int ply,
+      int alpha,
+      int beta,
+      bool is_pv,
+      bool in_check,
+      int move_index
+  ) {
+    if (move_index == 0) return -negamax(depth - 1, ply + 1, -beta, -alpha);
+
+    const int reduction = late_move_reduction(move, depth, ply, move_index, is_pv, in_check);
+
+    int score = -negamax(depth - 1 - reduction, ply + 1, -alpha - 1, -alpha);
+
+    if (reduction > 0 && score > alpha) {
+      score = -negamax(depth - 1, ply + 1, -alpha - 1, -alpha);
+    }
+
+    // NOTE: only reachable on PV nodes, where beta isn't alpha + 1
+    if (score > alpha && score < beta) { score = -negamax(depth - 1, ply + 1, -beta, -alpha); }
+
+    return score;
+  }
+
+  int late_move_reduction(
+      const Move &move,
+      int depth,
+      int ply,
+      int move_index,
+      bool is_pv,
+      bool in_check
+  ) {
+    if (depth < 3 || move_index < 3 || in_check || !is_quiet(move)) return 0;
+
+    // NOTE: reducing checks loses exact mate distances
+    if (MoveGenerator::is_in_check(pos, pos.to_move)) return 0;
+
+    int reduction =
+        LATE_MOVE_REDUCTIONS
+            .values[std::min(depth, MAX_SEARCH_DEPTH)][std::min(move_index, MAX_REDUCED_MOVES - 1)];
+
+    if (is_pv) reduction--;
+    if (ply < MAX_SEARCH_DEPTH && (move == killers[ply][0] || move == killers[ply][1])) {
+      reduction--;
+    }
+
+    return std::clamp(reduction, 0, depth - 2);
+  }
 
   void update_pv(const Move &move, int ply) {
     if (ply >= MAX_SEARCH_DEPTH) return;
@@ -385,7 +483,12 @@ SearchResult run_search(
         if (std::find(claimed.begin(), claimed.end(), move) != claimed.end()) continue;
 
         pos.make_move(move);
-        int score = -searcher.negamax(depth - 1, 1, -INFINITE_SCORE, -alpha);
+
+        int score = 0;
+        if (has_move) score = -searcher.negamax(depth - 1, 1, -alpha - 1, -alpha);
+        if (!has_move || score > alpha)
+          score = -searcher.negamax(depth - 1, 1, -INFINITE_SCORE, -alpha);
+
         pos.undo_move();
         if (searcher.stopped) break;
 

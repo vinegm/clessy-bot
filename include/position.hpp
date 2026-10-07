@@ -51,6 +51,13 @@ public:
   void make_move(const Move &move);
   void undo_move();
 
+  // NOTE: illegal in check and unsound in zugzwang, both are the caller's to rule out
+  void make_null_move();
+
+  bool has_non_pawn_material(Color color) const {
+    return (occupancy[color] & ~get_bb(color, PAWN) & ~get_bb(color, KING)) != 0;
+  }
+
   NNUE::Accumulator &accumulator() const { return accumulator_slot.value; }
 
 private:

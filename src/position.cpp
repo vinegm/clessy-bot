@@ -254,11 +254,35 @@ void Position::make_move(const Move &move) {
   hash ^= en_passant_key(en_passant_square);
 }
 
+void Position::make_null_move() {
+  push_undo_info(Move{}, NO_PIECE, hash);
+
+  // The right to capture en passant does not survive the opponent declining
+  // to move, so it leaves the hash along with the square.
+  hash ^= en_passant_key(en_passant_square);
+  en_passant_square.reset();
+
+  halfmove_clock++;
+  pass_turn();
+}
+
 void Position::undo_move() {
   if (undo_stack.empty()) return;
 
   UndoInfo undo_info = undo_stack.back();
   undo_stack.pop_back();
+
+  // NOTE: a null move touched no piece
+  if (undo_info.move.is_null()) {
+    castling_rights = undo_info.castling_rights;
+    en_passant_square = undo_info.en_passant_square;
+    halfmove_clock = undo_info.halfmove_clock;
+    fullmove_counter = undo_info.fullmove_counter;
+    hash = undo_info.hash;
+
+    to_move = opposite_color(to_move);
+    return;
+  }
 
   Move move = undo_info.move;
   Square from = move.from();
