@@ -102,7 +102,7 @@ int MoveGenerator::generate_pawn_moves(
 
   while (single_pushes) {
     const Square to = pop_lsb_square(single_pushes);
-    const Square from = static_cast<Square>(to - Forward);
+    const auto from = static_cast<Square>(to - Forward);
     const uint64_t to_bit = square_to_bit(to);
 
     if (masks.pinned_pieces & square_to_bit(from) && !(to_bit & masks.pin_rays[from])) continue;
@@ -134,7 +134,7 @@ int MoveGenerator::generate_pawn_moves(
 
   while (double_pushes) {
     const Square to = pop_lsb_square(double_pushes);
-    const Square from = static_cast<Square>(to - 2 * Forward);
+    const auto from = static_cast<Square>(to - 2 * Forward);
     const uint64_t to_bit = square_to_bit(to);
 
     if (masks.pinned_pieces & square_to_bit(from) && !(to_bit & masks.pin_rays[from])) continue;

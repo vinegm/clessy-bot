@@ -6,9 +6,9 @@
 #include <fstream>
 
 void NNUE::refresh(const Position &pos, Accumulator &accumulator) {
-  for (int perspective = 0; perspective < 2; perspective++) {
+  for (auto &perspective : accumulator.values) {
     for (int neuron = 0; neuron < HIDDEN_SIZE; neuron++) {
-      accumulator.values[perspective][neuron] = network->feature_bias[neuron];
+      perspective[neuron] = network->feature_bias[neuron];
     }
   }
 

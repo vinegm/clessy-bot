@@ -196,7 +196,7 @@ void ClessUCI::handle_perft(const std::vector<std::string> &tokens) {
 
 void ClessUCI::handle_stop() {
   {
-    std::lock_guard<std::mutex> lock(search_mutex);
+    std::scoped_lock lock(search_mutex);
     control.stop.store(true, std::memory_order_relaxed);
     control.pondering.store(false, std::memory_order_relaxed);
   }
@@ -206,7 +206,7 @@ void ClessUCI::handle_stop() {
 
 void ClessUCI::handle_ponderhit() {
   {
-    std::lock_guard<std::mutex> lock(search_mutex);
+    std::scoped_lock lock(search_mutex);
     control.pondering.store(false, std::memory_order_relaxed);
   }
 
@@ -317,7 +317,7 @@ void ClessUCI::stop_search() {
   if (!search_thread.joinable()) return;
 
   {
-    std::lock_guard<std::mutex> lock(search_mutex);
+    std::scoped_lock lock(search_mutex);
     control.stop.store(true, std::memory_order_relaxed);
     control.pondering.store(false, std::memory_order_relaxed);
   }

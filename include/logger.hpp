@@ -5,6 +5,7 @@
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <utility>
 
 class Logger {
@@ -60,7 +61,7 @@ private:
 
   static void raw(const std::string &line);
   static void write(Level level, const std::string &message);
-  static std::string tag(Logger::Level level);
+  static std::string_view tag(Logger::Level level);
 
   template<typename... Args>
   static void emit(Level level, Args &&...args) {

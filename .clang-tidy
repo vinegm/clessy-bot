@@ -2,8 +2,16 @@ Checks: >
   clang-analyzer-*,
   bugprone-*,
   performance-*,
+  modernize-*,
   -bugprone-easily-swappable-parameters,
   -bugprone-narrowing-conversions,
-  -bugprone-signed-bitwise
+  -bugprone-signed-bitwise,
+  -modernize-use-trailing-return-type,
+  -modernize-use-nodiscard,
+  -modernize-macro-to-enum,
+  -modernize-avoid-c-arrays,
+  -modernize-return-braced-init-list
+
 WarningsAsErrors: '*'
 HeaderFilterRegex: '.*/include/.*'
+

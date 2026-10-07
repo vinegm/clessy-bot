@@ -26,18 +26,18 @@ constexpr ZobristKeys generate_zobrist_keys() {
   ZobristKeys keys{};
   uint64_t state = 0xc1e55e55b0a7dULL;
 
-  for (int piece = 0; piece < PIECE_NB; piece++) {
-    for (int sq = 0; sq < 64; sq++) {
-      keys.piece_square[piece][sq] = splitmix64(state);
+  for (auto &square_keys : keys.piece_square) {
+    for (uint64_t &key : square_keys) {
+      key = splitmix64(state);
     }
   }
 
-  for (int i = 0; i < 16; i++) {
-    keys.castling[i] = splitmix64(state);
+  for (uint64_t &key : keys.castling) {
+    key = splitmix64(state);
   }
 
-  for (int file = 0; file < 8; file++) {
-    keys.en_passant_file[file] = splitmix64(state);
+  for (uint64_t &key : keys.en_passant_file) {
+    key = splitmix64(state);
   }
 
   keys.side_to_move = splitmix64(state);

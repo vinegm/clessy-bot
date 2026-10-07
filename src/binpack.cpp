@@ -65,7 +65,7 @@ void BinpackWriter::pack_position(const Position &pos) {
   while (remaining) {
     Square square = pop_lsb_square(remaining);
     uint8_t piece = pos.lookup_table[square];
-    uint8_t code = static_cast<uint8_t>(decode_color(piece) * 6 + (decode_type(piece) - 1));
+    auto code = static_cast<uint8_t>(decode_color(piece) * 6 + (decode_type(piece) - 1));
 
     if (!half_full) {
       low_nibble = code;

@@ -8,11 +8,11 @@
 #include <sstream>
 
 void Position::set_fen(const std::string &fen) {
-  for (int i = 0; i < 12; i++) {
-    bitboards[i] = 0;
+  for (uint64_t &bitboard : bitboards) {
+    bitboard = 0;
   }
-  for (int i = 0; i < 64; i++) {
-    lookup_table[i] = NO_PIECE;
+  for (Piece &piece : lookup_table) {
+    piece = NO_PIECE;
   }
   occupancy[WHITE] = 0;
   occupancy[BLACK] = 0;
@@ -310,8 +310,8 @@ void Position::undo_move() {
     int rook_from_offset = is_kingside * 3 + (1 - is_kingside) * -4;
     int rook_to_offset = is_kingside * 1 + (1 - is_kingside) * -1;
 
-    Square rook_from = static_cast<Square>(from + rook_from_offset);
-    Square rook_to = static_cast<Square>(from + rook_to_offset);
+    auto rook_from = static_cast<Square>(from + rook_from_offset);
+    auto rook_to = static_cast<Square>(from + rook_to_offset);
 
     uint8_t rook_encoded = lookup_table[rook_to];
     Color rook_color = decode_color(rook_encoded);

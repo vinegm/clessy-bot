@@ -4,7 +4,7 @@
 #include <iostream>
 #include <mutex>
 
-std::string Logger::tag(Logger::Level level) {
+std::string_view Logger::tag(Logger::Level level) {
   switch (level) {
     case Level::Error: return "error: ";
     case Level::Warn: return "warn: ";
@@ -16,7 +16,7 @@ std::string Logger::tag(Logger::Level level) {
 }
 
 void Logger::raw(const std::string &line) {
-  std::lock_guard<std::mutex> lock(output_mutex);
+  std::scoped_lock lock(output_mutex);
   std::cout << line << '\n' << std::flush;
 }
 
@@ -25,6 +25,6 @@ void Logger::write(Level level, const std::string &message) {
   std::replace(flat.begin(), flat.end(), '\n', ' ');
   std::replace(flat.begin(), flat.end(), '\r', ' ');
 
-  std::lock_guard<std::mutex> lock(output_mutex);
+  std::scoped_lock lock(output_mutex);
   std::cout << "info string " << tag(level) << flat << '\n' << std::flush;
 }
