@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 
+import argparse
+import re
 import subprocess
 import time
-import re
-import argparse
-
 
 TESTS = [
     (
@@ -27,7 +26,7 @@ TESTS = [
 
 
 def run_perft(
-    engine_path: str, fen: str, depth: int, timeout: int = None
+    engine_path: str, fen: str, depth: int, timeout: int | None = None
 ) -> tuple[int, float]:
     """Run perft test on the given engine and return nodes and elapsed time."""
     cmd = [engine_path]
@@ -43,7 +42,12 @@ def run_perft(
     start = time.perf_counter()
     try:
         result = subprocess.run(
-            cmd, timeout=timeout, input=input_text, text=True, capture_output=True
+            cmd,
+            check=False,
+            timeout=timeout,
+            input=input_text,
+            text=True,
+            capture_output=True,
         )
     except subprocess.TimeoutExpired:
         return -1, -1.0
@@ -58,7 +62,7 @@ def run_perft(
 
 
 def check_perft(
-    engine: str, fen: str, depth: int, expected: int, timeout: int = None
+    engine: str, fen: str, depth: int, expected: int, timeout: int | None = None
 ) -> None:
     """Run perft test and check results."""
     nodes, elapsed = run_perft(engine, fen, depth, timeout=timeout)
@@ -70,10 +74,10 @@ def check_perft(
     nps = int(nodes / elapsed) if elapsed > 0 else 0
 
     if nodes != expected:
-        print(f"Failed Depth {depth}: got {nodes}, expected {expected}")
+        print(f"Failed Depth {depth:,}: got {nodes}, expected {expected}")
         return
 
-    print(f"Depth {depth}: {nodes} nodes ({elapsed:.3f}s, {nps:,} NPS)")
+    print(f"Depth {depth}: {nodes:,} nodes ({elapsed:.3f}s, {nps:,} NPS)")
     return
 
 
