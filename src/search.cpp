@@ -193,18 +193,8 @@ public:
     if (moves.empty() && in_check) return -(MATE_SCORE - ply);
     if (moves.empty()) return 0;
 
-    // Null move pruning: hand the opponent a free move. If the position still
-    // fails high after that, the moves actually available can only do better,
-    // so this subtree is not worth searching properly.
-    //
-    // The moves above are generated first so a stalemate cannot reach this —
-    // a position with no legal move is the purest zugzwang there is, and the
-    // assumption behind the null move fails hardest exactly there.
-    //
-    // Skipped in check, where passing is not a legal alternative to begin
-    // with, on the principal variation, where a wrong bound would propagate
-    // into the reported line, and when the side to move has only pawns left,
-    // which is where zugzwang otherwise lives.
+    // Null move pruning
+    // NOTE: only with pieces left, a side down to pawns is where zugzwang lives
     if (allow_null && !is_pv && !in_check && depth >= 3 && pos.has_non_pawn_material(pos.to_move)) {
       const int reduction = 2 + depth / 6;
 
@@ -213,10 +203,10 @@ public:
       pos.undo_move();
       if (stopped) return 0;
 
-      // A mate proved by giving the opponent a free move is not a mate. Report
-      // that the node fails high without claiming a distance that would then
-      // travel through score_to_table as if it were real.
-      if (score >= beta) return is_mate_score(score) ? beta : score;
+      // NOTE: a mate proven by a free move is only a bound, never a distance
+      if (score >= beta && is_mate_score(score)) return beta;
+
+      if (score >= beta) return score;
     }
 
     order_quiet_aware(moves, hash_move, ply);

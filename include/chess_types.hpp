@@ -193,11 +193,15 @@ private:
 
 static_assert(sizeof(Move) == 2, "Move must stay 16 bits wide");
 
-constexpr Color opposite_color(Color color) { return (color == WHITE) ? BLACK : WHITE; }
+constexpr Color opposite_color(Color color) {
+  if (color == WHITE) return BLACK;
+
+  return WHITE;
+}
 
 constexpr uint64_t square_to_bit(Square square) { return 1ULL << square; }
-constexpr int square_file(int sq) { return sq % 8; }
-constexpr int square_rank(int sq) { return sq / 8; }
+constexpr int square_file(int square) { return square % 8; }
+constexpr int square_rank(int square) { return square / 8; }
 
 constexpr Square indexes_to_square(int rank, int file) { return Square((rank) * 8 + (file)); }
 
@@ -206,54 +210,23 @@ constexpr Piece encode_piece(Color color, PieceType type) { return Piece((color 
 constexpr Color decode_color(uint8_t code) { return Color(code >> 3); }
 constexpr PieceType decode_type(uint8_t code) { return PieceType(code & 7); }
 
-/**
- * Get the index of the least significant bit set in a bitboard.
- *
- * @param bitboard
- * @return Square
- */
 constexpr Square lsb_square(uint64_t bitboard) { return Square(__builtin_ctzll(bitboard)); }
 
-/**
- * Pop the least significant bit from a bitboard and return it.
- *
- * @param bitboard
- * @return uint64_t
- */
 constexpr uint64_t pop_lsb(uint64_t &bitboard) {
   uint64_t lsb = bitboard & -bitboard;
   bitboard &= bitboard - 1;
   return lsb;
 }
 
-/**
- * Pop the least significant bit from a bitboard and return its index.
- *
- * @param bitboard
- * @return Square
- */
 constexpr Square pop_lsb_square(uint64_t &bitboard) {
   Square index = lsb_square(bitboard);
   pop_lsb(bitboard);
   return index;
 }
 
-/**
- * Count the number of bits set in a bitboard.
- *
- * @param bitboard
- * @return int
- */
 constexpr int count_bits(uint64_t bitboard) { return __builtin_popcountll(bitboard); }
 
-/**
- * Move a single bit in a bitboard by a specified number of squares in a given direction.
- *
- * @tparam direction The direction to move (NORTH, SOUTH, EAST, WEST)
- * @param bb The input bitboard
- * @param squares The number of squares to move in that direction (must be positive)
- * @return uint64_t The new bitboard with the bit moved
- */
+// NOTE: bb must have exactly one bit set and squares must be positive
 template<MoveDirection direction>
 constexpr uint64_t move_bit(uint64_t bb, int squares) {
   int src = lsb_square(bb);
@@ -262,14 +235,6 @@ constexpr uint64_t move_bit(uint64_t bb, int squares) {
   return 1ULL << dst;
 }
 
-/**
- * Move a single bit in a bitboard by a specified number of squares in a given direction.
- *
- * @param bb The input bitboard (should have exactly one bit set)
- * @param direction The direction to move
- * @param squares The number of squares to move in that direction (must be positive)
- * @return uint64_t The new bitboard with the bit moved
- */
 constexpr uint64_t move_bit(uint64_t bb, MoveDirection direction, int squares) {
   switch (direction) {
     case NORTH: return move_bit<NORTH>(bb, squares);

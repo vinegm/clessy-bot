@@ -65,7 +65,10 @@ std::vector<std::pair<Move, int>> ClessEngine::perft_divide(int depth) {
 
   for (int i = 0; i < moves.count; i++) {
     make_move(moves[i]);
-    int nodes = (depth == 1) ? 1 : perft(depth - 1);
+
+    int nodes = 1;
+    if (depth > 1) nodes = perft(depth - 1);
+
     results.emplace_back(moves[i], nodes);
     undo_move();
   }

@@ -21,9 +21,7 @@ void Position::set_fen(const std::string &fen) {
   undo_stack.clear();
   hash = 0;
 
-  // The board is cleared below without going through remove_piece, so anything
-  // the accumulator still holds describes the previous position. Drop it
-  // before the first add_piece rather than adding the new pieces on top.
+  // NOTE: the board is cleared without remove_piece, so the accumulator is stale
   accumulator().generation = 0;
 
   std::istringstream fen_stream(fen);
@@ -46,9 +44,10 @@ void Position::set_fen(const std::string &fen) {
       continue;
     }
 
-    Color color = isupper(piece_char) ? WHITE : BLACK;
-    PieceType type;
+    Color color = BLACK;
+    if (isupper(piece_char)) color = WHITE;
 
+    PieceType type;
     switch (toupper(piece_char)) {
       case 'P': type = PAWN; break;
       case 'R': type = ROOK; break;
@@ -65,7 +64,8 @@ void Position::set_fen(const std::string &fen) {
   }
 
   // Active color
-  to_move = (active_color == "w") ? WHITE : BLACK;
+  to_move = BLACK;
+  if (active_color == "w") to_move = WHITE;
 
   if (castling == "-") {
     castling_rights = NO_CASTLING;
@@ -91,8 +91,11 @@ void Position::set_fen(const std::string &fen) {
   }
 
   // Halfmove clock and Fullmove counter
-  halfmove_clock = halfmove_str.empty() ? 0 : std::stoi(halfmove_str);
-  fullmove_counter = fullmove_str.empty() ? 1 : std::stoi(fullmove_str);
+  halfmove_clock = 0;
+  if (!halfmove_str.empty()) halfmove_clock = std::stoi(halfmove_str);
+
+  fullmove_counter = 1;
+  if (!fullmove_str.empty()) fullmove_counter = std::stoi(fullmove_str);
 
   if (to_move == BLACK) hash ^= ZOBRIST_KEYS.side_to_move;
   hash ^= ZOBRIST_KEYS.castling[castling_rights];
@@ -144,8 +147,11 @@ std::string Position::get_fen() const {
   }
 
   // Active color
+  char side = 'w';
+  if (to_move == BLACK) side = 'b';
+
   fen += ' ';
-  fen += (to_move == WHITE) ? 'w' : 'b';
+  fen += side;
 
   // Castling rights
   fen += ' ';
@@ -257,8 +263,7 @@ void Position::make_move(const Move &move) {
 void Position::make_null_move() {
   push_undo_info(Move{}, NO_PIECE, hash);
 
-  // The right to capture en passant does not survive the opponent declining
-  // to move, so it leaves the hash along with the square.
+  // NOTE: en passant doesn't survive the opponent passing
   hash ^= en_passant_key(en_passant_square);
   en_passant_square.reset();
 
@@ -381,13 +386,7 @@ void Position::update_castling_rights(const Move &move, Square captured_square) 
   }
 }
 
-// These two are the only places the board changes, which is what makes them
-// the whole of the NNUE incremental update: make_move, undo_move and set_fen
-// all express castling, promotion, en passant and captures as add/remove
-// pairs, so keeping the accumulator in step here keeps it in step everywhere.
-//
-// An uncomputed accumulator is left alone rather than started, so a perft that
-// never evaluates pays one predictable branch per piece touched.
+// NOTE: the only places the board changes, so the accumulator follows every move
 void Position::add_piece(Color color, PieceType piece, Square square) {
   uint64_t square_bit = square_to_bit(square);
   get_bb_ref(color, piece) |= square_bit;

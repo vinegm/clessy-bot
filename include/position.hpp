@@ -35,7 +35,10 @@ public:
 
   constexpr int get_bb_idx(Color color, PieceType type) const {
     int code = encode_piece(color, type);
-    return (color == WHITE) ? code - 1 : code - 3;
+
+    if (color == WHITE) return code - 1;
+
+    return code - 3;
   }
   constexpr uint64_t get_bb(Color color, PieceType type) const {
     return bitboards[get_bb_idx(color, type)];
@@ -61,15 +64,7 @@ public:
   NNUE::Accumulator &accumulator() const { return accumulator_slot.value; }
 
 private:
-  /**
-   * Holder that drops the accumulator on copy.
-   *
-   * Copying a Position is rare and never wants the accumulator with it — the
-   * en passant legality probe copies one only to make and unmake a move on
-   * it, and never evaluates. Leaving the copy's accumulator uncomputed keeps
-   * that probe from paying for two kilobytes it would throw away, and a
-   * refresh is one call away if anyone ever does evaluate a copy.
-   */
+  // NOTE: a copy never wants the accumulator, so it starts out unbuilt
   struct AccumulatorSlot {
     NNUE::Accumulator value{};
 

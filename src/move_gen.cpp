@@ -6,6 +6,21 @@
 
 #include <cstdint>
 
+static constexpr int pawn_forward(Color color) {
+  if (color == WHITE) return NORTH;
+  return SOUTH;
+}
+
+static constexpr uint64_t pawn_starting_rank(Color color) {
+  if (color == WHITE) return RANK_2;
+  return RANK_7;
+}
+
+static constexpr uint64_t pawn_promotion_rank(Color color) {
+  if (color == WHITE) return RANK_8;
+  return RANK_1;
+}
+
 MoveList MoveGenerator::generate_legal_moves(const Position &position) {
   // NOTE: the masks already make every move legal except en passant
   return filter_en_passant_legality(position, generate_pseudo_legal_moves(position));
@@ -81,10 +96,10 @@ int MoveGenerator::generate_pawn_moves(
     uint64_t targets
 ) {
   Move *start = moves;
-  constexpr Color Them = (Us == WHITE) ? BLACK : WHITE;
-  constexpr int Forward = (Us == WHITE) ? NORTH : SOUTH;
-  constexpr uint64_t StartingRank = (Us == WHITE) ? RANK_2 : RANK_7;
-  constexpr uint64_t PromotionRank = (Us == WHITE) ? RANK_8 : RANK_1;
+  constexpr Color Them = opposite_color(Us);
+  constexpr int Forward = pawn_forward(Us);
+  constexpr uint64_t StartingRank = pawn_starting_rank(Us);
+  constexpr uint64_t PromotionRank = pawn_promotion_rank(Us);
 
   const uint64_t our_pawns = position.get_bb(Us, PAWN);
   const uint64_t enemy_pieces = position.occupancy[Them];
@@ -225,7 +240,8 @@ int MoveGenerator::generate_piece_moves(
 
     while (attacks) {
       const Square to = pop_lsb_square(attacks);
-      const MoveType move_type = (square_to_bit(to) & enemy_occupancy) ? CAPTURE : NORMAL_MOVE;
+      MoveType move_type = NORMAL_MOVE;
+      if (square_to_bit(to) & enemy_occupancy) move_type = CAPTURE;
 
       *moves++ = {from, to, move_type};
     }
