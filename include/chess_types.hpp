@@ -2,26 +2,27 @@
 
 #include <cstdint>
 
-#define RANK_1 0xFFULL
-#define RANK_2 (RANK_1 << (8 * 1))
-#define RANK_3 (RANK_1 << (8 * 2))
-#define RANK_4 (RANK_1 << (8 * 3))
-#define RANK_5 (RANK_1 << (8 * 4))
-#define RANK_6 (RANK_1 << (8 * 5))
-#define RANK_7 (RANK_1 << (8 * 6))
-#define RANK_8 (RANK_1 << (8 * 7))
+constexpr uint64_t RANK_1 = 0xFFULL;
+constexpr uint64_t RANK_2 = RANK_1 << (8 * 1);
+constexpr uint64_t RANK_3 = RANK_1 << (8 * 2);
+constexpr uint64_t RANK_4 = RANK_1 << (8 * 3);
+constexpr uint64_t RANK_5 = RANK_1 << (8 * 4);
+constexpr uint64_t RANK_6 = RANK_1 << (8 * 5);
+constexpr uint64_t RANK_7 = RANK_1 << (8 * 6);
+constexpr uint64_t RANK_8 = RANK_1 << (8 * 7);
 
-#define FILE_A 0x0101010101010101ULL
-#define FILE_B (FILE_A << 1)
-#define FILE_C (FILE_A << 2)
-#define FILE_D (FILE_A << 3)
-#define FILE_E (FILE_A << 4)
-#define FILE_F (FILE_A << 5)
-#define FILE_G (FILE_A << 6)
-#define FILE_H (FILE_A << 7)
+constexpr uint64_t FILE_A = 0x0101010101010101ULL;
+constexpr uint64_t FILE_B = FILE_A << 1;
+constexpr uint64_t FILE_C = FILE_A << 2;
+constexpr uint64_t FILE_D = FILE_A << 3;
+constexpr uint64_t FILE_E = FILE_A << 4;
+constexpr uint64_t FILE_F = FILE_A << 5;
+constexpr uint64_t FILE_G = FILE_A << 6;
+constexpr uint64_t FILE_H = FILE_A << 7;
 
-#define MAX_POSSIBLE_LEGAL_MOVES 256
-#define INITIAL_POSITION_FEN "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+constexpr int MAX_POSSIBLE_LEGAL_MOVES = 256;
+constexpr const char *INITIAL_POSITION_FEN =
+    "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
 // clang-format off
 // Little-endian rank-file

@@ -9,12 +9,6 @@
 #include <thread>
 #include <vector>
 
-#define HASH_MIN_MB 1
-#define HASH_MAX_MB 4096
-
-#define MULTIPV_MAX 256
-#define MOVE_OVERHEAD_MAX 5000
-
 class ClessUCI {
 public:
   ~ClessUCI();
@@ -22,6 +16,11 @@ public:
   void run();
 
 private:
+  static constexpr int HASH_MIN_MB = 1;
+  static constexpr int HASH_MAX_MB = 4096;
+  static constexpr int MULTIPV_MAX = 256;
+  static constexpr int MOVE_OVERHEAD_MAX = 5000;
+
   ClessEngine engine;
 
   // NOTE: only read while a search is being started
