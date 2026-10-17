@@ -4,7 +4,6 @@
 #include "position.hpp"
 
 #include <cstdint>
-#include <sys/types.h>
 #include <vector>
 
 MoveList ClessEngine::get_legal_moves() const {
@@ -14,21 +13,7 @@ MoveList ClessEngine::get_legal_moves() const {
   legal_cache_valid = true;
 
   return legal_moves;
-};
-
-MoveList ClessEngine::get_legal_moves_from(Square square) const {
-  if (!legal_cache_valid) {
-    legal_moves = MoveGenerator::generate_legal_moves(pos);
-    legal_cache_valid = true;
-  }
-
-  MoveList filtered_moves;
-  for (int i = 0; i < legal_moves.count; i++) {
-    if (legal_moves.moves[i].from() == square) { filtered_moves.add_move(legal_moves.moves[i]); }
-  }
-
-  return filtered_moves;
-};
+}
 
 void ClessEngine::make_move(const Move &move) {
   legal_cache_valid = false;
@@ -40,38 +25,31 @@ void ClessEngine::undo_move() {
   pos.undo_move();
 }
 
-uint64_t ClessEngine::perft(int depth) {
-  if (depth == 0) return 1;
-
-  MoveList moves = get_legal_moves();
-  if (depth == 1) return moves.count;
-
-  uint64_t nodes = 0;
-  for (int i = 0; i < moves.count; i++) {
-    make_move(moves[i]);
-    nodes += perft(depth - 1);
-    undo_move();
-  }
-
-  return nodes;
-}
-
-std::vector<std::pair<Move, int>> ClessEngine::perft_divide(int depth) {
-  std::vector<std::pair<Move, int>> results;
-
+std::vector<std::pair<Move, uint64_t>> ClessEngine::perft_divide(int depth) {
+  std::vector<std::pair<Move, uint64_t>> results;
   if (depth == 0) return results;
 
-  MoveList moves = get_legal_moves();
-
-  for (int i = 0; i < moves.count; i++) {
-    make_move(moves[i]);
-
-    int nodes = 1;
-    if (depth > 1) nodes = perft(depth - 1);
-
-    results.emplace_back(moves[i], nodes);
-    undo_move();
+  for (const Move &move : get_legal_moves()) {
+    pos.make_move(move);
+    results.emplace_back(move, perft(pos, depth - 1));
+    pos.undo_move();
   }
 
   return results;
+}
+
+uint64_t ClessEngine::perft(Position &position, int depth) {
+  if (depth == 0) return 1;
+
+  MoveList moves = MoveGenerator::generate_legal_moves(position);
+  if (depth == 1) return moves.count;
+
+  uint64_t nodes = 0;
+  for (const Move &move : moves) {
+    position.make_move(move);
+    nodes += perft(position, depth - 1);
+    position.undo_move();
+  }
+
+  return nodes;
 }

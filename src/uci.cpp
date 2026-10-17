@@ -185,7 +185,7 @@ void ClessUCI::handle_perft(const std::vector<std::string> &tokens) {
   int depth = std::stoi(tokens[2]);
   auto results = engine.perft_divide(depth);
 
-  unsigned long total_nodes = 0;
+  uint64_t total_nodes = 0;
   for (const auto &[move, nodes] : results) {
     Logger::respond(move_to_uci(move), ": ", nodes);
     total_nodes += nodes;

@@ -11,7 +11,6 @@
 class ClessEngine {
 public:
   ClessEngine() : pos(INITIAL_POSITION_FEN) {}
-  ClessEngine(const std::string &fen) : pos(fen) {}
 
   std::string get_fen() const { return pos.get_fen(); }
   void set_fen(const std::string &fen) {
@@ -35,14 +34,14 @@ public:
   }
 
   MoveList get_legal_moves() const;
-  MoveList get_legal_moves_from(Square square) const;
   void make_move(const Move &move);
   void undo_move();
-  uint64_t perft(int depth);
-  std::vector<std::pair<Move, int>> perft_divide(int depth);
+  std::vector<std::pair<Move, uint64_t>> perft_divide(int depth);
 
 private:
   Position pos;
+
+  static uint64_t perft(Position &position, int depth);
 
   mutable bool legal_cache_valid = false;
   mutable MoveList legal_moves;
