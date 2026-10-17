@@ -4,8 +4,10 @@
 #include "eval.hpp"
 #include "logger.hpp"
 #include "nnue.hpp"
+#include "notation.hpp"
 #include "transposition_table.hpp"
-#include "uci_utils.hpp"
+#include "uci_formatter.hpp"
+#include "uci_parser.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -18,7 +20,7 @@ void ClessUCI::run() {
   std::string line;
 
   while (!quitting && std::getline(std::cin, line)) {
-    std::vector<std::string> tokens = split_string(line);
+    std::vector<std::string> tokens = UciParser::split_string(line);
 
     if (tokens.empty()) continue;
 
@@ -36,7 +38,7 @@ void ClessUCI::run() {
 
 void ClessUCI::call_command(const std::vector<std::string> &leading_tokens) {
   size_t start = 0;
-  while (start < leading_tokens.size() && !is_command(leading_tokens[start])) {
+  while (start < leading_tokens.size() && !UciParser::is_command(leading_tokens[start])) {
     start++;
   }
 
@@ -112,7 +114,7 @@ void ClessUCI::handle_register() {
 void ClessUCI::handle_setoption(const std::vector<std::string> &tokens) {
   std::string name;
   std::string value;
-  if (!parse_setoption(tokens, name, value)) return;
+  if (!UciParser::parse_setoption(tokens, name, value)) return;
 
   stop_search();
 
@@ -148,7 +150,7 @@ void ClessUCI::handle_position(const std::vector<std::string> &tokens) {
 
   std::string fen;
   size_t end = 0;
-  if (!parse_position_fen(tokens, fen, end)) return;
+  if (!UciParser::parse_position_fen(tokens, fen, end)) return;
 
   engine.set_fen(fen);
 
@@ -168,7 +170,7 @@ void ClessUCI::handle_go(const std::vector<std::string> &tokens) {
 
   bool ponder = false;
   std::vector<std::string> searchmoves;
-  parse_go_limits(tokens, limits, ponder, searchmoves);
+  UciParser::parse_go_limits(tokens, limits, ponder, searchmoves);
   resolve_searchmoves(searchmoves, limits);
 
   // NOTE: per spec, a go that bounds nothing searches until stop
@@ -187,7 +189,7 @@ void ClessUCI::handle_perft(const std::vector<std::string> &tokens) {
 
   uint64_t total_nodes = 0;
   for (const auto &[move, nodes] : results) {
-    Logger::respond(move_to_uci(move), ": ", nodes);
+    Logger::respond(Notation::move_to_uci(move), ": ", nodes);
     total_nodes += nodes;
   }
 
@@ -221,7 +223,7 @@ void ClessUCI::handle_d() {
     squares[square] = engine.get_piece_at(static_cast<Square>(square));
   }
 
-  Logger::respond(format_board(squares));
+  Logger::respond(UciFormatter::format_board(squares));
   Logger::respond("");
 
   Logger::respond("Fen: ", engine.get_fen());
@@ -239,7 +241,7 @@ void ClessUCI::handle_d() {
   Logger::respond("In check: ", in_check);
 
   MoveList legal_moves = engine.get_legal_moves();
-  Logger::respond("Legal moves (", legal_moves.count, "): ", moves_to_uci(legal_moves));
+  Logger::respond("Legal moves (", legal_moves.count, "): ", Notation::moves_to_uci(legal_moves));
 }
 
 void ClessUCI::handle_nnue(const std::vector<std::string> &tokens) {
@@ -328,7 +330,7 @@ void ClessUCI::stop_search() {
 }
 
 void ClessUCI::send_iteration_info(const SearchResult &result) {
-  Logger::respond(format_info_line(result, multipv, TranspositionTable::hashfull()));
+  Logger::respond(UciFormatter::format_info_line(result, multipv, TranspositionTable::hashfull()));
 }
 
 void ClessUCI::search_worker(const SearchLimits &limits) {
@@ -342,9 +344,9 @@ void ClessUCI::search_worker(const SearchLimits &limits) {
   // NOTE: per spec, infinite and ponder searches hold the bestmove until released
   if (was_pondering || limits.infinite) await_release(was_pondering);
 
-  std::string line = Logger::format("bestmove ", move_to_uci(result.best_move));
+  std::string line = Logger::format("bestmove ", Notation::move_to_uci(result.best_move));
 
-  if (result.pv.size() >= 2) line += " ponder " + move_to_uci(result.pv[1]);
+  if (result.pv.size() >= 2) line += " ponder " + Notation::move_to_uci(result.pv[1]);
 
   Logger::respond(line);
 }
@@ -362,7 +364,7 @@ void ClessUCI::await_release(bool was_pondering) {
 bool ClessUCI::resolve_move(const std::string &uci, Move &move) const {
   Move parsed;
   try {
-    parsed = uci_to_move(uci);
+    parsed = Notation::uci_to_move(uci);
   } catch (const std::exception &) { return false; }
 
   // NOTE: only the legal move knows its move type

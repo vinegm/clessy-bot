@@ -21,7 +21,9 @@ set(SOURCES
     src/search.cpp
     src/transposition_table.cpp
     src/attacks.cpp
-    src/uci_utils.cpp
+    src/notation.cpp
+    src/uci_parser.cpp
+    src/uci_formatter.cpp
     src/logger.cpp)
 
 find_package(Threads REQUIRED)
