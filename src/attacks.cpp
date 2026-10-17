@@ -1,5 +1,7 @@
 #include "attacks.hpp"
 
+#include <cstring>
+
 MagicEntry Attacks::rook_magics[64];
 MagicEntry Attacks::bishop_magics[64];
 uint64_t Attacks::rook_table[102400];
@@ -116,7 +118,7 @@ static void find_magic(MagicEntry &entry, uint64_t *table, int square, SlowAttac
     uint64_t magic = sparse_rand();
     if (count_bits((mask * magic) >> 56) < 6) continue;
 
-    memset(used, 0, size * sizeof(uint64_t));
+    std::memset(used, 0, size * sizeof(uint64_t));
 
     bool works = true;
     for (int i = 0; i < count && works; i++) {
@@ -134,7 +136,7 @@ static void find_magic(MagicEntry &entry, uint64_t *table, int square, SlowAttac
 
     entry.magic = magic;
     entry.shift = shift;
-    memcpy(table, used, size * sizeof(uint64_t));
+    std::memcpy(table, used, size * sizeof(uint64_t));
 
     return;
   }
