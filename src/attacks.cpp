@@ -1,11 +1,11 @@
 #include "attacks.hpp"
 
-MagicEntry rook_magics[64];
-MagicEntry bishop_magics[64];
+MagicEntry Attacks::rook_magics[64];
+MagicEntry Attacks::bishop_magics[64];
+uint64_t Attacks::rook_table[102400];
+uint64_t Attacks::bishop_table[5248];
 
-// NOTE: sized by the sum of 2^popcount(mask) over every square
-static uint64_t rook_table[102400];
-static uint64_t bishop_table[5248];
+const bool Attacks::initialized = Attacks::initialize();
 
 // Every attack a slider has from a square, given what blocks it.
 // NOTE: Only used to generate the magic tables.
@@ -160,7 +160,7 @@ static void
 #endif
 }
 
-void init_attack_tables() {
+bool Attacks::initialize() noexcept {
   int rook_offset = 0;
   int bishop_offset = 0;
 
@@ -185,4 +185,6 @@ void init_attack_tables() {
     );
     bishop_offset += 1 << count_bits(bishop_occupancy);
   }
+
+  return true;
 }

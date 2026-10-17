@@ -3,6 +3,7 @@
 #include "chess_types.hpp"
 #include "nnue.hpp"
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -64,6 +65,9 @@ public:
   NNUE::Accumulator &accumulator() const { return accumulator_slot.value; }
 
 private:
+  static const std::array<CastlingRights, 64> CASTLING_MASKS;
+  static constexpr std::array<CastlingRights, 64> init_castling_masks();
+
   // NOTE: a copy never wants the accumulator, so it starts out unbuilt
   struct AccumulatorSlot {
     NNUE::Accumulator value{};
@@ -90,3 +94,26 @@ private:
 
   static uint64_t en_passant_key(const std::optional<Square> &square);
 };
+
+constexpr std::array<CastlingRights, 64> Position::init_castling_masks() {
+  std::array<CastlingRights, 64> castling_masks{};
+
+  for (int square = 0; square < 64; square++) {
+    castling_masks[square] = ANY_CASTLING;
+
+    switch (square) {
+      case E1: castling_masks[square] &= ~(W_CASTLE_KING | W_CASTLE_QUEEN); break;
+      case H1: castling_masks[square] &= ~W_CASTLE_KING; break;
+      case A1: castling_masks[square] &= ~W_CASTLE_QUEEN; break;
+      case E8: castling_masks[square] &= ~(B_CASTLE_KING | B_CASTLE_QUEEN); break;
+      case H8: castling_masks[square] &= ~B_CASTLE_KING; break;
+      case A8: castling_masks[square] &= ~B_CASTLE_QUEEN; break;
+      default: break;
+    }
+  }
+
+  return castling_masks;
+}
+
+inline constexpr std::array<CastlingRights, 64> Position::CASTLING_MASKS =
+    Position::init_castling_masks();

@@ -1,4 +1,3 @@
-#include "attacks.hpp"
 #include "datagen.hpp"
 #include "transposition_table.hpp"
 #include "uci.hpp"
@@ -6,8 +5,6 @@
 #include <string>
 
 int main(int argc, char **argv) {
-  init_attack_tables();
-
   if (argc > 1 && std::string(argv[1]) == "datagen") {
     ClessDatagen datagen;
     return datagen.run(argc - 2, argv + 2);

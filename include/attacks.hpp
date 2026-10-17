@@ -10,8 +10,64 @@
 #include <immintrin.h>
 #endif
 
-constexpr std::array<std::array<uint64_t, 64>, 2> init_pawn_attacks() {
-  std::array<std::array<uint64_t, 64>, 2> pawn_attacks{}; // [Color][Square]
+// NOTE: uses magic bitboards to compute attacks for sliding pieces.
+struct MagicEntry {
+  uint64_t mask;
+#ifndef __BMI2__
+  uint64_t magic;
+  int shift;
+#endif
+  uint64_t *attacks;
+};
+
+class Attacks {
+public:
+  Attacks() = delete;
+
+  static uint64_t pawn_attacks(Color color, int square) { return PAWN_TABLE[color][square]; }
+  static uint64_t knight_attacks(int square) { return KNIGHT_TABLE[square]; }
+  static uint64_t king_attacks(int square) { return KING_TABLE[square]; }
+
+  static uint64_t rook_attacks(int square, uint64_t occupancy) {
+    return lookup(rook_magics[square], occupancy);
+  }
+
+  static uint64_t bishop_attacks(int square, uint64_t occupancy) {
+    return lookup(bishop_magics[square], occupancy);
+  }
+
+private:
+  static const std::array<std::array<uint64_t, 64>, 2> PAWN_TABLE; // [Color][Square]
+  static const std::array<uint64_t, 64> KNIGHT_TABLE;
+  static const std::array<uint64_t, 64> KING_TABLE;
+
+  static constexpr std::array<std::array<uint64_t, 64>, 2> init_pawn_attacks();
+  static constexpr std::array<uint64_t, 64> init_knight_attacks();
+  static constexpr std::array<uint64_t, 64> init_king_attacks();
+
+  static MagicEntry rook_magics[64];
+  static MagicEntry bishop_magics[64];
+
+  // NOTE: sized by the sum of 2^popcount(mask) over every square
+  static uint64_t rook_table[102400];
+  static uint64_t bishop_table[5248];
+
+  // NOTE: set by building the tables during static initialization, before main runs
+  static const bool initialized;
+
+  static bool initialize() noexcept;
+
+  static uint64_t lookup(const MagicEntry &magic, uint64_t occupancy) {
+#ifdef __BMI2__
+    return magic.attacks[_pext_u64(occupancy, magic.mask)];
+#else
+    return magic.attacks[((occupancy & magic.mask) * magic.magic) >> magic.shift];
+#endif
+  }
+};
+
+constexpr std::array<std::array<uint64_t, 64>, 2> Attacks::init_pawn_attacks() {
+  std::array<std::array<uint64_t, 64>, 2> pawn_attacks{};
   const uint64_t NOT_FILE_A = ~FILE_A;
   const uint64_t NOT_FILE_H = ~FILE_H;
 
@@ -33,7 +89,7 @@ constexpr std::array<std::array<uint64_t, 64>, 2> init_pawn_attacks() {
   return pawn_attacks;
 }
 
-constexpr std::array<uint64_t, 64> init_knight_attacks() {
+constexpr std::array<uint64_t, 64> Attacks::init_knight_attacks() {
   std::array<uint64_t, 64> knight_attacks{};
   const uint64_t NOT_FILE_A = ~FILE_A;
   const uint64_t NOT_FILE_B = ~FILE_B;
@@ -55,7 +111,7 @@ constexpr std::array<uint64_t, 64> init_knight_attacks() {
   return knight_attacks;
 }
 
-constexpr std::array<uint64_t, 64> init_king_attacks() {
+constexpr std::array<uint64_t, 64> Attacks::init_king_attacks() {
   std::array<uint64_t, 64> king_attacks{};
   const uint64_t NOT_FILE_A = ~FILE_A;
   const uint64_t NOT_FILE_H = ~FILE_H;
@@ -76,60 +132,7 @@ constexpr std::array<uint64_t, 64> init_king_attacks() {
   return king_attacks;
 }
 
-constexpr std::array<CastlingRights, 64> init_castling_masks() {
-  std::array<CastlingRights, 64> castling_masks{};
-
-  for (int square = 0; square < 64; square++) {
-    castling_masks[square] = ANY_CASTLING;
-
-    switch (square) {
-      case E1: castling_masks[square] &= ~(W_CASTLE_KING | W_CASTLE_QUEEN); break;
-      case H1: castling_masks[square] &= ~W_CASTLE_KING; break;
-      case A1: castling_masks[square] &= ~W_CASTLE_QUEEN; break;
-      case E8: castling_masks[square] &= ~(B_CASTLE_KING | B_CASTLE_QUEEN); break;
-      case H8: castling_masks[square] &= ~B_CASTLE_KING; break;
-      case A8: castling_masks[square] &= ~B_CASTLE_QUEEN; break;
-      default: break;
-    }
-  }
-
-  return castling_masks;
-}
-
-constexpr const auto PAWN_ATTACKS = init_pawn_attacks();
-constexpr const auto KNIGHT_ATTACKS = init_knight_attacks();
-constexpr const auto KING_ATTACKS = init_king_attacks();
-constexpr const auto CASTLING_MASKS = init_castling_masks();
-
-// NOTE: uses magic bitboards to compute attacks for sliding pieces.
-struct MagicEntry {
-  uint64_t mask;
-#ifndef __BMI2__
-  uint64_t magic;
-  int shift;
-#endif
-  uint64_t *attacks;
-};
-
-extern MagicEntry rook_magics[64];
-extern MagicEntry bishop_magics[64];
-
-void init_attack_tables();
-
-inline uint64_t get_rook_attacks(int square, uint64_t occupancy) {
-  const MagicEntry &magic = rook_magics[square];
-#ifdef __BMI2__
-  return magic.attacks[_pext_u64(occupancy, magic.mask)];
-#else
-  return magic.attacks[((occupancy & magic.mask) * magic.magic) >> magic.shift];
-#endif
-}
-
-inline uint64_t get_bishop_attacks(int square, uint64_t occupancy) {
-  const MagicEntry &magic = bishop_magics[square];
-#ifdef __BMI2__
-  return magic.attacks[_pext_u64(occupancy, magic.mask)];
-#else
-  return magic.attacks[((occupancy & magic.mask) * magic.magic) >> magic.shift];
-#endif
-}
+inline constexpr std::array<std::array<uint64_t, 64>, 2> Attacks::PAWN_TABLE =
+    Attacks::init_pawn_attacks();
+inline constexpr std::array<uint64_t, 64> Attacks::KNIGHT_TABLE = Attacks::init_knight_attacks();
+inline constexpr std::array<uint64_t, 64> Attacks::KING_TABLE = Attacks::init_king_attacks();
