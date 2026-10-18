@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <optional>
 
 using Clock = std::chrono::steady_clock;
 
@@ -35,77 +36,10 @@ struct LateMoveReductions {
 
 static const LateMoveReductions LATE_MOVE_REDUCTIONS;
 
-static int move_order_score(const Position &pos, const Move &move, const Move &hash_move) {
-  if (move == hash_move) return HASH_MOVE_ORDER;
-
-  int score = 0;
-
-  if (move.is_capture()) {
-    PieceType victim = PAWN;
-    if (!move.is_en_passant()) victim = decode_type(pos.lookup_table[move.to()]);
-
-    PieceType attacker = decode_type(pos.lookup_table[move.from()]);
-    score += CAPTURE_ORDER + 10 * ORDER_VALUE[victim] - ORDER_VALUE[attacker];
-  }
-
-  if (move.is_promotion()) score += CAPTURE_ORDER + ORDER_VALUE[move.promotion_piece()];
-
-  return score;
-}
-
-static void order_moves(const Position &pos, MoveList &moves) {
-  const Move no_hash_move{};
-
-  std::stable_sort(moves.begin(), moves.end(), [&pos, &no_hash_move](const Move &a, const Move &b) {
-    return move_order_score(pos, a, no_hash_move) > move_order_score(pos, b, no_hash_move);
-  });
-}
-
-// NOTE: mate scores are relative to the root while searching, but to the node in the table
-static int score_to_table(int score, int ply) {
-  if (!is_mate_score(score)) return score;
-  if (score < 0) return score - ply;
-
-  return score + ply;
-}
-
-static int score_from_table(int score, int ply) {
-  if (!is_mate_score(score)) return score;
-  if (score < 0) return score + ply;
-
-  return score - ply;
-}
-
-static int64_t time_budget_ms(const SearchLimits &limits, Color side_to_move) {
-  int64_t overhead = std::max<int64_t>(limits.move_overhead, 0);
-
-  if (limits.movetime >= 0) return std::max<int64_t>(limits.movetime - overhead, 1);
-
-  int64_t time = limits.wtime;
-  int64_t increment = limits.winc;
-  if (side_to_move == BLACK) {
-    time = limits.btime;
-    increment = limits.binc;
-  }
-
-  if (time < 0) return -1;
-
-  // NOTE: without movestogo assume about 20 moves are left
-  int64_t moves_left = 20;
-  if (limits.movestogo > 0) moves_left = limits.movestogo;
-
-  int64_t budget = time / moves_left + increment / 2 - overhead;
-  return std::clamp<int64_t>(budget, 1, std::max<int64_t>(time - overhead, 1));
-}
-
 class Searcher {
 public:
-  Searcher(
-      Position &pos,
-      const SearchLimits &limits,
-      SearchControl *control,
-      Clock::time_point start
-  ) : pos(pos), control(control) {
+  Searcher(Position &pos, const SearchLimits &limits, SearchControl *control) :
+      pos(pos), limits(limits), control(control), start(Clock::now()) {
     if (!limits.infinite) node_limit = limits.nodes;
     if (!limits.infinite && limits.has_clock()) budget_ms = time_budget_ms(limits, pos.to_move);
 
@@ -115,6 +49,123 @@ public:
 
     // NOTE: a ponder search only arms its deadline on ponderhit
     ponder_active = control != nullptr && control->pondering.load(std::memory_order_relaxed);
+  }
+
+  SearchResult run(const SearchInfoCallback &on_iteration) {
+    TranspositionTable::new_search();
+
+    MoveList root_moves =
+        restrict_root_moves(MoveGenerator::generate_legal_moves(pos), limits.searchmoves);
+
+    SearchResult result;
+    if (root_moves.empty()) return result;
+
+    // NOTE: something legal to return if stop arrives during the first iteration
+    result.best_move = root_moves[0];
+    order_moves(pos, root_moves);
+
+    const int lines = std::clamp(limits.multipv, 1, root_moves.count);
+
+    for (int depth = 1; depth <= max_depth(limits); depth++) {
+      std::vector<SearchResult> iteration = iterate(depth, lines, root_moves);
+      if (stopped || iteration.empty()) break;
+
+      result = iteration.front();
+      report(iteration, on_iteration);
+      rotate_best_lines(root_moves, iteration);
+
+      if (limits.infinite) continue;
+      if (is_mate_score(result.score)) break;
+      if (out_of_budget()) break;
+    }
+
+    result.nodes = nodes;
+
+    return result;
+  }
+
+private:
+  std::vector<SearchResult> iterate(int depth, int lines, const MoveList &root_moves) {
+    // NOTE: depth 1 always finishes, so a best move always exists
+    time_checks_enabled = depth > 1;
+    seldepth = 0;
+
+    std::vector<SearchResult> iteration;
+    std::vector<Move> claimed;
+
+    for (int line = 0; line < lines; line++) {
+      std::optional<SearchResult> current = search_line(depth, line, root_moves, claimed);
+      if (!current.has_value()) break;
+
+      claimed.push_back(current->best_move);
+      iteration.push_back(*current);
+    }
+
+    return iteration;
+  }
+
+  // NOTE: one MultiPV line, the best move that an earlier line didn't claim
+  std::optional<SearchResult> search_line(
+      int depth,
+      int line,
+      const MoveList &root_moves,
+      const std::vector<Move> &claimed
+  ) {
+    SearchResult current;
+    current.depth = depth;
+    current.multipv = line + 1;
+
+    int alpha = -INFINITE_SCORE;
+    bool has_move = false;
+
+    for (const Move &move : root_moves) {
+      if (std::find(claimed.begin(), claimed.end(), move) != claimed.end()) continue;
+
+      pos.make_move(move);
+
+      int score = 0;
+      if (has_move) score = -negamax(depth - 1, 1, -alpha - 1, -alpha);
+      if (!has_move || score > alpha) score = -negamax(depth - 1, 1, -INFINITE_SCORE, -alpha);
+
+      pos.undo_move();
+      if (stopped) break;
+
+      alpha = std::max(alpha, score);
+
+      if (has_move && score <= current.score) continue;
+
+      has_move = true;
+      current.score = score;
+      current.best_move = move;
+      current.pv.assign(1, move);
+      append_pv(current.pv, 1);
+    }
+
+    if (stopped || !has_move) return std::nullopt;
+
+    current.seldepth = std::max(seldepth, depth);
+    current.nodes = nodes;
+    current.elapsed_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - start).count();
+
+    return current;
+  }
+
+  static void
+      report(const std::vector<SearchResult> &iteration, const SearchInfoCallback &on_iteration) {
+    if (!on_iteration) return;
+
+    for (const SearchResult &line : iteration) {
+      on_iteration(line);
+    }
+  }
+
+  // NOTE: the next iteration searches this one's best lines first, best first
+  static void rotate_best_lines(MoveList &root_moves, const std::vector<SearchResult> &iteration) {
+    for (int i = static_cast<int>(iteration.size()) - 1; i >= 0; i--) {
+      Move *found = std::find(root_moves.begin(), root_moves.end(), iteration[i].best_move);
+      if (found != root_moves.end()) std::rotate(root_moves.begin(), found, found + 1);
+    }
   }
 
   uint64_t nodes = 0;
@@ -248,9 +299,10 @@ public:
     return best;
   }
 
-private:
   Position &pos;
+  const SearchLimits &limits;
   SearchControl *control;
+  Clock::time_point start;
   int64_t node_limit = -1;
 
   Clock::time_point deadline;
@@ -404,23 +456,98 @@ private:
 
     return !stopped;
   }
-};
+  static int move_order_score(const Position &pos, const Move &move, const Move &hash_move) {
+    if (move == hash_move) return HASH_MOVE_ORDER;
 
-static MoveList restrict_root_moves(const MoveList &root_moves, const std::vector<Move> &allowed) {
-  if (allowed.empty()) return root_moves;
+    int score = 0;
 
-  MoveList restricted;
-  for (const Move &move : root_moves) {
-    if (std::find(allowed.begin(), allowed.end(), move) == allowed.end()) continue;
+    if (move.is_capture()) {
+      PieceType victim = PAWN;
+      if (!move.is_en_passant()) victim = decode_type(pos.lookup_table[move.to()]);
 
-    restricted.add_move(move);
+      PieceType attacker = decode_type(pos.lookup_table[move.from()]);
+      score += CAPTURE_ORDER + 10 * ORDER_VALUE[victim] - ORDER_VALUE[attacker];
+    }
+
+    if (move.is_promotion()) score += CAPTURE_ORDER + ORDER_VALUE[move.promotion_piece()];
+
+    return score;
   }
 
-  // NOTE: a list that leaves nothing is ignored, so a move always comes back
-  if (restricted.empty()) return root_moves;
+  static void order_moves(const Position &pos, MoveList &moves) {
+    const Move no_hash_move{};
 
-  return restricted;
-}
+    std::stable_sort(
+        moves.begin(),
+        moves.end(),
+        [&pos, &no_hash_move](const Move &a, const Move &b) {
+          return move_order_score(pos, a, no_hash_move) > move_order_score(pos, b, no_hash_move);
+        }
+    );
+  }
+
+  // NOTE: mate scores are relative to the root while searching, but to the node in the table
+  static int score_to_table(int score, int ply) {
+    if (!is_mate_score(score)) return score;
+    if (score < 0) return score - ply;
+
+    return score + ply;
+  }
+
+  static int score_from_table(int score, int ply) {
+    if (!is_mate_score(score)) return score;
+    if (score < 0) return score + ply;
+
+    return score - ply;
+  }
+
+  static int64_t time_budget_ms(const SearchLimits &limits, Color side_to_move) {
+    int64_t overhead = std::max<int64_t>(limits.move_overhead, 0);
+
+    if (limits.movetime >= 0) return std::max<int64_t>(limits.movetime - overhead, 1);
+
+    int64_t time = limits.wtime;
+    int64_t increment = limits.winc;
+    if (side_to_move == BLACK) {
+      time = limits.btime;
+      increment = limits.binc;
+    }
+
+    if (time < 0) return -1;
+
+    // NOTE: without movestogo assume about 20 moves are left
+    int64_t moves_left = 20;
+    if (limits.movestogo > 0) moves_left = limits.movestogo;
+
+    int64_t budget = time / moves_left + increment / 2 - overhead;
+    return std::clamp<int64_t>(budget, 1, std::max<int64_t>(time - overhead, 1));
+  }
+
+  static MoveList
+      restrict_root_moves(const MoveList &root_moves, const std::vector<Move> &allowed) {
+    if (allowed.empty()) return root_moves;
+
+    MoveList restricted;
+    for (const Move &move : root_moves) {
+      if (std::find(allowed.begin(), allowed.end(), move) == allowed.end()) continue;
+
+      restricted.add_move(move);
+    }
+
+    // NOTE: a list that leaves nothing is ignored, so a move always comes back
+    if (restricted.empty()) return root_moves;
+
+    return restricted;
+  }
+  static int max_depth(const SearchLimits &limits) {
+    int depth = std::clamp(limits.depth, 1, MAX_SEARCH_DEPTH);
+
+    // NOTE: the mating ply still needs depth left to see the empty move list
+    if (limits.mate > 0) depth = std::min(depth, std::clamp(2 * limits.mate, 1, MAX_SEARCH_DEPTH));
+
+    return depth;
+  }
+};
 
 SearchResult run_search(
     Position &pos,
@@ -428,100 +555,5 @@ SearchResult run_search(
     const SearchInfoCallback &on_iteration,
     SearchControl *control
 ) {
-  Clock::time_point start = Clock::now();
-
-  TranspositionTable::new_search();
-
-  MoveList root_moves =
-      restrict_root_moves(MoveGenerator::generate_legal_moves(pos), limits.searchmoves);
-
-  SearchResult result;
-  if (root_moves.empty()) return result;
-
-  // NOTE: something legal to return if stop arrives during the first iteration
-  result.best_move = root_moves[0];
-
-  Searcher searcher(pos, limits, control, start);
-  order_moves(pos, root_moves);
-
-  int max_depth = std::clamp(limits.depth, 1, MAX_SEARCH_DEPTH);
-
-  // NOTE: the mating ply still needs depth left to see the empty move list
-  if (limits.mate > 0) {
-    max_depth = std::min(max_depth, std::clamp(2 * limits.mate, 1, MAX_SEARCH_DEPTH));
-  }
-
-  int lines = std::clamp(limits.multipv, 1, root_moves.count);
-
-  for (int depth = 1; depth <= max_depth; depth++) {
-    // NOTE: depth 1 always finishes, so a best move always exists
-    searcher.time_checks_enabled = depth > 1;
-    searcher.seldepth = 0;
-
-    std::vector<SearchResult> iteration;
-    std::vector<Move> claimed;
-
-    for (int line = 0; line < lines; line++) {
-      SearchResult current;
-      current.depth = depth;
-      current.multipv = line + 1;
-
-      int alpha = -INFINITE_SCORE;
-      bool has_move = false;
-
-      for (const Move &move : root_moves) {
-        if (std::find(claimed.begin(), claimed.end(), move) != claimed.end()) continue;
-
-        pos.make_move(move);
-
-        int score = 0;
-        if (has_move) score = -searcher.negamax(depth - 1, 1, -alpha - 1, -alpha);
-        if (!has_move || score > alpha)
-          score = -searcher.negamax(depth - 1, 1, -INFINITE_SCORE, -alpha);
-
-        pos.undo_move();
-        if (searcher.stopped) break;
-
-        alpha = std::max(alpha, score);
-
-        if (has_move && score <= current.score) continue;
-
-        has_move = true;
-        current.score = score;
-        current.best_move = move;
-        current.pv.assign(1, move);
-        searcher.append_pv(current.pv, 1);
-      }
-
-      if (searcher.stopped || !has_move) break;
-
-      current.seldepth = std::max(searcher.seldepth, depth);
-      current.nodes = searcher.nodes;
-      current.elapsed_ms =
-          std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - start).count();
-
-      claimed.push_back(current.best_move);
-      iteration.push_back(current);
-    }
-
-    if (searcher.stopped || iteration.empty()) break;
-
-    result = iteration.front();
-
-    for (const SearchResult &line : iteration) {
-      if (on_iteration) on_iteration(line);
-    }
-
-    for (int i = static_cast<int>(iteration.size()) - 1; i >= 0; i--) {
-      Move *found = std::find(root_moves.begin(), root_moves.end(), iteration[i].best_move);
-      if (found != root_moves.end()) std::rotate(root_moves.begin(), found, found + 1);
-    }
-
-    if (limits.infinite) continue;
-    if (is_mate_score(result.score)) break;
-    if (searcher.out_of_budget()) break;
-  }
-
-  result.nodes = searcher.nodes;
-  return result;
+  return Searcher(pos, limits, control).run(on_iteration);
 }
