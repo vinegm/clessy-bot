@@ -2,7 +2,6 @@
 
 #include "binpack.hpp"
 #include "chess_types.hpp"
-#include "move_gen.hpp"
 #include "position.hpp"
 #include "search.hpp"
 

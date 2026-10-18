@@ -1,7 +1,6 @@
 #pragma once
 
 #include "chess_types.hpp"
-#include "move_gen.hpp"
 
 #include <string>
 

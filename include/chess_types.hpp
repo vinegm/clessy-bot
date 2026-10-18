@@ -187,6 +187,28 @@ private:
 
 static_assert(sizeof(Move) == 2, "Move must stay 16 bits wide");
 
+struct MoveList {
+  Move moves[MAX_POSSIBLE_LEGAL_MOVES];
+  int count = 0;
+
+  void add_move(const Move &move) { moves[count++] = move; }
+
+  void
+      add_move(Square from, Square to, MoveType type = NORMAL_MOVE, PieceType promotion = NO_TYPE) {
+    moves[count++] = {from, to, type, promotion};
+  }
+
+  Move *begin() { return moves; }
+  Move *end() { return moves + count; }
+  const Move *begin() const { return moves; }
+  const Move *end() const { return moves + count; }
+
+  bool empty() const { return count == 0; }
+  int size() const { return count; }
+  Move &operator[](int index) { return moves[index]; }
+  const Move &operator[](int index) const { return moves[index]; }
+};
+
 constexpr Color opposite_color(Color color) {
   if (color == WHITE) return BLACK;
 

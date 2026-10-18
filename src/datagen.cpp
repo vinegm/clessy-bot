@@ -2,6 +2,7 @@
 
 #include "eval.hpp"
 #include "logger.hpp"
+#include "move_gen.hpp"
 #include "nnue.hpp"
 #include "transposition_table.hpp"
 
