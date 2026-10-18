@@ -3,8 +3,37 @@
 #include "chess_types.hpp"
 
 #include <cstdint>
+#include <optional>
 
-constexpr uint64_t splitmix64(uint64_t &state) {
+class Zobrist {
+public:
+  Zobrist() = delete;
+
+  static uint64_t piece_key(Piece piece, Square square) { return KEYS.piece_square[piece][square]; }
+  static uint64_t castling_key(CastlingRights rights) { return KEYS.castling[rights]; }
+  static uint64_t side_to_move_key() { return KEYS.side_to_move; }
+
+  static uint64_t en_passant_key(const std::optional<Square> &square) {
+    if (!square.has_value()) return 0;
+
+    return KEYS.en_passant_file[square_file(*square)];
+  }
+
+private:
+  struct Keys {
+    uint64_t piece_square[PIECE_NB][64]{}; // [Piece][Square]
+    uint64_t castling[16]{};               // [CastlingRights]
+    uint64_t en_passant_file[8]{};
+    uint64_t side_to_move{};
+  };
+
+  static const Keys KEYS;
+
+  static constexpr uint64_t splitmix64(uint64_t &state);
+  static constexpr Keys generate();
+};
+
+constexpr uint64_t Zobrist::splitmix64(uint64_t &state) {
   state += 0x9e3779b97f4a7c15ULL;
 
   uint64_t z = state;
@@ -15,15 +44,8 @@ constexpr uint64_t splitmix64(uint64_t &state) {
   return z ^ (z >> 31);
 }
 
-struct ZobristKeys {
-  uint64_t piece_square[PIECE_NB][64]{}; // [Piece][Square]
-  uint64_t castling[16]{};               // [CastlingRights]
-  uint64_t en_passant_file[8]{};
-  uint64_t side_to_move{};
-};
-
-constexpr ZobristKeys generate_zobrist_keys() {
-  ZobristKeys keys{};
+constexpr Zobrist::Keys Zobrist::generate() {
+  Keys keys{};
   uint64_t state = 0xc1e55e55b0a7dULL;
 
   for (auto &square_keys : keys.piece_square) {
@@ -45,8 +67,4 @@ constexpr ZobristKeys generate_zobrist_keys() {
   return keys;
 }
 
-inline constexpr ZobristKeys ZOBRIST_KEYS = generate_zobrist_keys();
-
-constexpr uint64_t zobrist_piece_key(Piece piece, Square square) {
-  return ZOBRIST_KEYS.piece_square[piece][square];
-}
+inline constexpr Zobrist::Keys Zobrist::KEYS = Zobrist::generate();
