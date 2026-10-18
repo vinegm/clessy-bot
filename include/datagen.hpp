@@ -6,6 +6,7 @@
 #include "position.hpp"
 #include "search.hpp"
 
+#include <CLI/CLI.hpp>
 #include <chrono>
 #include <cstdint>
 #include <fstream>
@@ -85,8 +86,7 @@ private:
   int64_t discarded = 0;
   std::chrono::steady_clock::time_point started;
 
-  static void usage();
-  bool parse_options(int argc, char **argv);
+  void add_options(CLI::App &app);
 
   bool open_output();
   bool setup_opening();

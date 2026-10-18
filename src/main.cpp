@@ -7,7 +7,8 @@
 int main(int argc, char **argv) {
   if (argc > 1 && std::string(argv[1]) == "datagen") {
     ClessDatagen datagen;
-    return datagen.run(argc - 2, argv + 2);
+    // NOTE: "datagen" stands in as the program name CLI11 skips
+    return datagen.run(argc - 1, argv + 1);
   }
 
   TranspositionTable::resize(TranspositionTable::DEFAULT_MB);

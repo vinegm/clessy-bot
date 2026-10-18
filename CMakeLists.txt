@@ -28,10 +28,19 @@ set(SOURCES
 
 find_package(Threads REQUIRED)
 
+include(FetchContent)
+# NOTE: SYSTEM keeps clang-tidy and warnings out of CLI11's own headers
+FetchContent_Declare(
+  cli11
+  URL https://github.com/CLIUtils/CLI11/archive/refs/tags/v2.5.0.tar.gz
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+  SYSTEM)
+FetchContent_MakeAvailable(cli11)
+
 add_executable(clessy ${SOURCES})
 target_include_directories(clessy PRIVATE ${PROJECT_SOURCE_DIR}/include)
 target_compile_options(clessy PRIVATE -O3 -march=native)
-target_link_libraries(clessy PRIVATE Threads::Threads)
+target_link_libraries(clessy PRIVATE Threads::Threads CLI11::CLI11)
 
 # Dev tooling
 file(GLOB_RECURSE

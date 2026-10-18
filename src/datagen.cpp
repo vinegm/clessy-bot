@@ -7,86 +7,52 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <map>
 
-void ClessDatagen::usage() {
-  Logger::respond("usage: clessy datagen [options]");
-  Logger::respond("");
-  Logger::respond("  --format <binpack|text>   output format (default binpack)");
-  Logger::respond("  --out <path>          output file (default data.binpack or data.txt)");
-  Logger::respond("  --append              add to an existing output file instead of refusing");
-  Logger::respond("  --games <n>           games to play (default 1000)");
-  Logger::respond("  --nodes <n>           search nodes per move (default 5000)");
-  Logger::respond("  --depth <n>           depth cap per move (default unlimited)");
-  Logger::respond("  --random-plies <n>    random moves opening each game (default 8)");
-  Logger::respond("  --opening-max-score <cp>  reject openings scoring past this (default 800)");
-  Logger::respond("  --adjudicate-score <cp>   call a win at this score (default 2000, 0 off)");
-  Logger::respond("  --adjudicate-plies <n>    consecutive plies needed for it (default 4)");
-  Logger::respond("  --max-plies <n>       discard games longer than this (default 400)");
-  Logger::respond("  --hash <mb>           transposition table size (default 16)");
-  Logger::respond("  --eval-file <path>    .nnue network to label with (default hand-crafted)");
-  Logger::respond("  --seed <n>            RNG seed (default random)");
-}
+void ClessDatagen::add_options(CLI::App &app) {
+  app.add_option_function<std::string>(
+         "--format",
+         [this](const std::string &name) {
+           options.format = Format::Binpack;
+           if (name == "text") options.format = Format::Text;
+         },
+         "output format"
+  )
+      ->check(CLI::IsMember({"binpack", "text"}))
+      ->default_str("binpack");
+  app.add_option("--out", options.output, "output file, data.binpack or data.txt when unset");
+  app.add_flag("--append", options.append, "add to an existing output file instead of refusing");
 
-bool ClessDatagen::parse_options(int argc, char **argv) {
-  for (int i = 0; i < argc; i++) {
-    std::string flag = argv[i];
+  app.add_option("--games", options.games, "games to play")->capture_default_str();
+  app.add_option("--nodes", options.nodes, "search nodes per move")->capture_default_str();
+  app.add_option("--depth", options.depth, "depth cap per move")->capture_default_str();
+  app.add_option("--random-plies", options.random_plies, "random moves opening each game")
+      ->capture_default_str();
+  app.add_option(
+         "--opening-max-score",
+         options.opening_max_score,
+         "reject openings scoring past this, in centipawns"
+  )
+      ->capture_default_str();
+  app.add_option(
+         "--adjudicate-score",
+         options.adjudicate_score,
+         "call a win at this score, 0 is off"
+  )
+      ->capture_default_str();
+  app.add_option("--adjudicate-plies", options.adjudicate_plies, "consecutive plies needed for it")
+      ->capture_default_str();
+  app.add_option("--max-plies", options.max_plies, "discard games longer than this")
+      ->capture_default_str();
 
-    if (flag == "-h" || flag == "--help") return false;
-    if (flag == "--append") {
-      options.append = true;
-      continue;
-    }
-
-    if (i + 1 >= argc) {
-      Logger::error("datagen: '", flag, "' needs a value");
-      return false;
-    }
-    std::string value = argv[++i];
-
-    if (flag == "--out") {
-      options.output = value;
-    } else if (flag == "--format") {
-      if (value == "binpack") {
-        options.format = Format::Binpack;
-      } else if (value == "text") {
-        options.format = Format::Text;
-      } else {
-        Logger::error("datagen: unknown format '", value, "'");
-        return false;
-      }
-    } else if (flag == "--eval-file") {
-      options.eval_file = value;
-    } else if (flag == "--games") {
-      options.games = std::stoll(value);
-    } else if (flag == "--nodes") {
-      options.nodes = std::stoll(value);
-    } else if (flag == "--depth") {
-      options.depth = std::stoi(value);
-    } else if (flag == "--random-plies") {
-      options.random_plies = std::stoi(value);
-    } else if (flag == "--opening-max-score") {
-      options.opening_max_score = std::stoi(value);
-    } else if (flag == "--adjudicate-score") {
-      options.adjudicate_score = std::stoi(value);
-    } else if (flag == "--adjudicate-plies") {
-      options.adjudicate_plies = std::stoi(value);
-    } else if (flag == "--max-plies") {
-      options.max_plies = std::stoi(value);
-    } else if (flag == "--hash") {
-      options.hash_mb = std::stoul(value);
-    } else if (flag == "--seed") {
-      options.seed = std::stoull(value);
-    } else {
-      Logger::error("datagen: unknown option '", flag, "'");
-      return false;
-    }
-  }
-
-  // NOTE: named after the format so a run can't leave a .txt holding binary
-  if (options.output.empty() && options.format == Format::Binpack) options.output = "data.binpack";
-  if (options.output.empty()) options.output = "data.txt";
-
-  return true;
+  app.add_option("--hash", options.hash_mb, "transposition table size in MB")
+      ->capture_default_str();
+  app.add_option(
+      "--eval-file",
+      options.eval_file,
+      ".nnue network to label with, hand-crafted if unset"
+  );
+  app.add_option("--seed", options.seed, "random seed, 0 picks one")->capture_default_str();
 }
 
 bool ClessDatagen::open_output() {
@@ -302,10 +268,16 @@ void ClessDatagen::report(int64_t games) const {
 }
 
 int ClessDatagen::run(int argc, char **argv) {
-  if (!parse_options(argc, argv)) {
-    usage();
-    return 1;
-  }
+  CLI::App app{"Self-play training data for clessy-nnue", "clessy datagen"};
+  add_options(app);
+
+  try {
+    app.parse(argc, argv);
+  } catch (const CLI::ParseError &error) { return app.exit(error); }
+
+  // NOTE: named after the format so a run can't leave a .txt holding binary
+  if (options.output.empty() && options.format == Format::Binpack) options.output = "data.binpack";
+  if (options.output.empty()) options.output = "data.txt";
 
   if (!open_output()) return 1;
 
