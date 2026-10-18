@@ -29,14 +29,14 @@ static constexpr uint64_t push_forward(uint64_t pawns) {
 }
 
 // NOTE: where a piece may land, given the pin it is under and the check to answer
-static uint64_t legal_targets(Square from, const Masks &masks) {
+uint64_t MoveGenerator::legal_targets(Square from, const Masks &masks) {
   if (masks.pinned_pieces & square_to_bit(from)) return masks.pin_rays[from] & masks.check_mask;
 
   return masks.check_mask;
 }
 
 template<PieceType PieceT>
-static uint64_t piece_attacks(Square from, const Position &position, const Masks &masks) {
+uint64_t MoveGenerator::piece_attacks(Square from, const Position &position, const Masks &masks) {
   const uint64_t occupancy = position.occupancy[ANY_COLOR];
 
   if constexpr (PieceT == KNIGHT) return Attacks::knight_attacks(from);
@@ -288,7 +288,7 @@ int MoveGenerator::generate_castling_moves(
   return moves - start;
 }
 
-Masks MoveGenerator::generate_masks(const Position &position) {
+MoveGenerator::Masks MoveGenerator::generate_masks(const Position &position) {
   const Color us = position.to_move;
   const Color them = opposite_color(us);
   const Square king_square = find_king(position, us);

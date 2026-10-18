@@ -28,27 +28,32 @@ struct MoveList {
   const Move &operator[](int index) const { return moves[index]; }
 };
 
-struct Masks {
-  uint64_t enemy_attacks = 0;
-  uint64_t check_mask = 0;
-  uint64_t checkers = 0;
-
-  uint64_t pinned_pieces = 0;
-  uint64_t pin_rays[64] = {}; // NOTE: only set for squares in pinned_pieces
-};
-
 class MoveGenerator {
 public:
   MoveGenerator() = delete;
 
   static MoveList generate_legal_moves(const Position &position);
-  static MoveList generate_pseudo_legal_moves(const Position &position);
-
   static MoveList generate_legal_captures(const Position &position);
 
   static bool is_in_check(const Position &position, Color color);
 
 private:
+  struct Masks {
+    uint64_t enemy_attacks = 0;
+    uint64_t check_mask = 0;
+    uint64_t checkers = 0;
+
+    uint64_t pinned_pieces = 0;
+    uint64_t pin_rays[64] = {}; // NOTE: only set for squares in pinned_pieces
+  };
+
+  static MoveList generate_pseudo_legal_moves(const Position &position);
+
+  static uint64_t legal_targets(Square from, const Masks &masks);
+
+  template<PieceType PieceT>
+  static uint64_t piece_attacks(Square from, const Position &position, const Masks &masks);
+
   using SliderAttacks = uint64_t (*)(int square, uint64_t occupancy);
 
   static MoveList filter_en_passant_legality(const Position &position, const MoveList &pseudo);
