@@ -95,7 +95,6 @@ private:
 
   std::string en_passant_fen() const;
 
-  static uint64_t en_passant_key(const std::optional<Square> &square);
   static std::pair<Square, Square> castling_rook_squares(Square king_from, Square king_to);
 };
 

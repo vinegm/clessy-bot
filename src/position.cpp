@@ -90,9 +90,9 @@ void Position::set_fen(const std::string &fen) {
   fullmove_counter = 1;
   if (!fullmove_str.empty()) fullmove_counter = std::stoi(fullmove_str);
 
-  if (to_move == BLACK) hash ^= ZOBRIST_KEYS.side_to_move;
-  hash ^= ZOBRIST_KEYS.castling[castling_rights];
-  hash ^= en_passant_key(en_passant_square);
+  if (to_move == BLACK) hash ^= Zobrist::side_to_move_key();
+  hash ^= Zobrist::castling_key(castling_rights);
+  hash ^= Zobrist::en_passant_key(en_passant_square);
 }
 
 std::string Position::get_fen() const {
@@ -189,8 +189,8 @@ void Position::make_move(const Move &move) {
 
   push_undo_info(move, captured_piece_encoded, hash_before);
 
-  hash ^= ZOBRIST_KEYS.castling[castling_rights];
-  hash ^= en_passant_key(en_passant_square);
+  hash ^= Zobrist::castling_key(castling_rights);
+  hash ^= Zobrist::en_passant_key(en_passant_square);
 
   en_passant_square.reset();
 
@@ -223,15 +223,15 @@ void Position::make_move(const Move &move) {
 
   pass_turn();
 
-  hash ^= ZOBRIST_KEYS.castling[castling_rights];
-  hash ^= en_passant_key(en_passant_square);
+  hash ^= Zobrist::castling_key(castling_rights);
+  hash ^= Zobrist::en_passant_key(en_passant_square);
 }
 
 void Position::make_null_move() {
   push_undo_info(Move{}, NO_PIECE, hash);
 
   // NOTE: en passant doesn't survive the opponent passing
-  hash ^= en_passant_key(en_passant_square);
+  hash ^= Zobrist::en_passant_key(en_passant_square);
   en_passant_square.reset();
 
   halfmove_clock++;
@@ -355,7 +355,7 @@ void Position::add_piece(Color color, PieceType piece, Square square) {
 
   const Piece encoded = encode_piece(color, piece);
   lookup_table[square] = encoded;
-  hash ^= zobrist_piece_key(encoded, square);
+  hash ^= Zobrist::piece_key(encoded, square);
 
   NNUE::Accumulator &current = accumulator();
   if (current.is_computed()) NNUE::add_feature(current, color, piece, square);
@@ -367,7 +367,7 @@ void Position::remove_piece(Color color, PieceType piece, Square square) {
   occupancy[color] &= ~square_bit;
   occupancy[ANY_COLOR] &= ~square_bit;
 
-  hash ^= zobrist_piece_key(encode_piece(color, piece), square);
+  hash ^= Zobrist::piece_key(encode_piece(color, piece), square);
   lookup_table[square] = NO_PIECE;
 
   NNUE::Accumulator &current = accumulator();
@@ -379,13 +379,7 @@ void Position::pass_turn() {
   if (black_played) fullmove_counter++;
 
   to_move = opposite_color(to_move);
-  hash ^= ZOBRIST_KEYS.side_to_move;
-}
-
-uint64_t Position::en_passant_key(const std::optional<Square> &square) {
-  if (!square.has_value()) return 0;
-
-  return ZOBRIST_KEYS.en_passant_file[square_file(*square)];
+  hash ^= Zobrist::side_to_move_key();
 }
 
 std::string Position::en_passant_fen() const {
