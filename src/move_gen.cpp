@@ -21,6 +21,34 @@ static constexpr uint64_t pawn_promotion_rank(Color color) {
   return RANK_1;
 }
 
+template<Color Us>
+static constexpr uint64_t push_forward(uint64_t pawns) {
+  if constexpr (Us == WHITE) return pawns << NORTH;
+
+  return pawns >> -SOUTH;
+}
+
+// NOTE: where a piece may land, given the pin it is under and the check to answer
+static uint64_t legal_targets(Square from, const Masks &masks) {
+  if (masks.pinned_pieces & square_to_bit(from)) return masks.pin_rays[from] & masks.check_mask;
+
+  return masks.check_mask;
+}
+
+template<PieceType PieceT>
+static uint64_t piece_attacks(Square from, const Position &position, const Masks &masks) {
+  const uint64_t occupancy = position.occupancy[ANY_COLOR];
+
+  if constexpr (PieceT == KNIGHT) return Attacks::knight_attacks(from);
+  if constexpr (PieceT == BISHOP) return Attacks::bishop_attacks(from, occupancy);
+  if constexpr (PieceT == ROOK) return Attacks::rook_attacks(from, occupancy);
+  if constexpr (PieceT == QUEEN) {
+    return Attacks::bishop_attacks(from, occupancy) | Attacks::rook_attacks(from, occupancy);
+  }
+
+  return Attacks::king_attacks(from) & ~masks.enemy_attacks;
+}
+
 MoveList MoveGenerator::generate_legal_moves(const Position &position) {
   // NOTE: the masks already make every move legal except en passant
   return filter_en_passant_legality(position, generate_pseudo_legal_moves(position));
@@ -58,11 +86,10 @@ int MoveGenerator::generate_moves(
   moves += generate_piece_moves<KING>(position, moves, masks, targets);
   if (count_bits(masks.checkers) > 1) return moves - start;
 
-  if (position.to_move == WHITE) {
+  if (position.to_move == WHITE)
     moves += generate_pawn_moves<WHITE>(position, moves, masks, targets);
-  } else {
+  if (position.to_move == BLACK)
     moves += generate_pawn_moves<BLACK>(position, moves, masks, targets);
-  }
 
   moves += generate_piece_moves<KNIGHT>(position, moves, masks, targets);
   moves += generate_piece_moves<BISHOP>(position, moves, masks, targets);
@@ -107,12 +134,7 @@ int MoveGenerator::generate_pawn_moves(
 
   // Single pushes
   // NOTE: promotions survive a captures only targets mask
-  uint64_t single_pushes;
-  if constexpr (Us == WHITE) {
-    single_pushes = (our_pawns << NORTH) & empty_squares;
-  } else {
-    single_pushes = (our_pawns >> (-SOUTH)) & empty_squares;
-  }
+  uint64_t single_pushes = push_forward<Us>(our_pawns) & empty_squares;
   single_pushes &= targets | PromotionRank;
 
   while (single_pushes) {
@@ -120,9 +142,7 @@ int MoveGenerator::generate_pawn_moves(
     const auto from = static_cast<Square>(to - Forward);
     const uint64_t to_bit = square_to_bit(to);
 
-    if (masks.pinned_pieces & square_to_bit(from) && !(to_bit & masks.pin_rays[from])) continue;
-
-    if (!(to_bit & masks.check_mask)) continue;
+    if (!(to_bit & legal_targets(from, masks))) continue;
 
     if (to_bit & PromotionRank) {
       *moves++ = {from, to, PROMOTION, QUEEN};
@@ -136,25 +156,15 @@ int MoveGenerator::generate_pawn_moves(
   }
 
   // Double pushes
-  uint64_t double_pushes;
-  if constexpr (Us == WHITE) {
-    const uint64_t single_push_from_start = ((our_pawns & StartingRank) << NORTH) & empty_squares;
-    double_pushes = (single_push_from_start << NORTH) & empty_squares;
-  } else {
-    const uint64_t single_push_from_start =
-        ((our_pawns & StartingRank) >> (-SOUTH)) & empty_squares;
-    double_pushes = (single_push_from_start >> (-SOUTH)) & empty_squares;
-  }
+  const uint64_t single_push_from_start =
+      push_forward<Us>(our_pawns & StartingRank) & empty_squares;
+  uint64_t double_pushes = push_forward<Us>(single_push_from_start) & empty_squares;
   double_pushes &= targets;
 
   while (double_pushes) {
     const Square to = pop_lsb_square(double_pushes);
     const auto from = static_cast<Square>(to - 2 * Forward);
-    const uint64_t to_bit = square_to_bit(to);
-
-    if (masks.pinned_pieces & square_to_bit(from) && !(to_bit & masks.pin_rays[from])) continue;
-
-    if (!(to_bit & masks.check_mask)) continue;
+    if (!(square_to_bit(to) & legal_targets(from, masks))) continue;
 
     *moves++ = {from, to};
   }
@@ -164,10 +174,8 @@ int MoveGenerator::generate_pawn_moves(
   while (pawns_copy) {
     const Square from = pop_lsb_square(pawns_copy);
     uint64_t attacks = Attacks::pawn_attacks(Us, from) & enemy_pieces & targets;
+    attacks &= legal_targets(from, masks);
 
-    if (masks.pinned_pieces & square_to_bit(from)) attacks &= masks.pin_rays[from];
-
-    attacks &= masks.check_mask;
     while (attacks) {
       const Square to = pop_lsb_square(attacks);
 
@@ -217,26 +225,10 @@ int MoveGenerator::generate_piece_moves(
   while (our_pieces_bb) {
     const Square from = pop_lsb_square(our_pieces_bb);
 
-    uint64_t attacks;
-    if constexpr (PieceT == KNIGHT) {
-      attacks = Attacks::knight_attacks(from);
-    } else if constexpr (PieceT == BISHOP) {
-      attacks = Attacks::bishop_attacks(from, position.occupancy[ANY_COLOR]);
-    } else if constexpr (PieceT == ROOK) {
-      attacks = Attacks::rook_attacks(from, position.occupancy[ANY_COLOR]);
-    } else if constexpr (PieceT == QUEEN) {
-      attacks = Attacks::bishop_attacks(from, position.occupancy[ANY_COLOR])
-                | Attacks::rook_attacks(from, position.occupancy[ANY_COLOR]);
-    } else {
-      attacks = Attacks::king_attacks(from) & ~masks.enemy_attacks;
-    }
-
+    uint64_t attacks = piece_attacks<PieceT>(from, position, masks);
     attacks &= ~our_occupancy & targets;
 
-    if constexpr (PieceT != KING) {
-      if (masks.pinned_pieces & square_to_bit(from)) attacks &= masks.pin_rays[from];
-      attacks &= masks.check_mask;
-    }
+    if constexpr (PieceT != KING) attacks &= legal_targets(from, masks);
 
     while (attacks) {
       const Square to = pop_lsb_square(attacks);

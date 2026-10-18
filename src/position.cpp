@@ -67,28 +67,21 @@ void Position::set_fen(const std::string &fen) {
   to_move = BLACK;
   if (active_color == "w") to_move = WHITE;
 
-  if (castling == "-") {
-    castling_rights = NO_CASTLING;
-  } else {
-    for (char c : castling) {
-      switch (c) {
-        case 'K': castling_rights |= W_CASTLE_KING; break;
-        case 'Q': castling_rights |= W_CASTLE_QUEEN; break;
-        case 'k': castling_rights |= B_CASTLE_KING; break;
-        case 'q': castling_rights |= B_CASTLE_QUEEN; break;
-        default: break;
-      }
+  // NOTE: castling_rights was reset above, and "-" matches none of the letters
+  for (char c : castling) {
+    switch (c) {
+      case 'K': castling_rights |= W_CASTLE_KING; break;
+      case 'Q': castling_rights |= W_CASTLE_QUEEN; break;
+      case 'k': castling_rights |= B_CASTLE_KING; break;
+      case 'q': castling_rights |= B_CASTLE_QUEEN; break;
+      default: break;
     }
   }
 
   // En passant square
-  if (en_passant == "-") {
-    en_passant_square = std::nullopt;
-  } else {
-    int file_idx = en_passant[0] - 'a';
-    int rank_idx = en_passant[1] - '1'; // -'1' for 0-based index
-    en_passant_square = indexes_to_square(rank_idx, file_idx);
-  }
+  en_passant_square = std::nullopt;
+  if (en_passant != "-")
+    en_passant_square = indexes_to_square(en_passant[1] - '1', en_passant[0] - 'a');
 
   // Halfmove clock and Fullmove counter
   halfmove_clock = 0;
@@ -155,26 +148,15 @@ std::string Position::get_fen() const {
 
   // Castling rights
   fen += ' ';
-  if (castling_rights == NO_CASTLING) {
-    fen += '-';
-  } else {
-    if (castling_rights & W_CASTLE_KING) fen += 'K';
-    if (castling_rights & W_CASTLE_QUEEN) fen += 'Q';
-    if (castling_rights & B_CASTLE_KING) fen += 'k';
-    if (castling_rights & B_CASTLE_QUEEN) fen += 'q';
-  }
+  if (castling_rights == NO_CASTLING) fen += '-';
+  if (castling_rights & W_CASTLE_KING) fen += 'K';
+  if (castling_rights & W_CASTLE_QUEEN) fen += 'Q';
+  if (castling_rights & B_CASTLE_KING) fen += 'k';
+  if (castling_rights & B_CASTLE_QUEEN) fen += 'q';
 
   // En passant square
   fen += ' ';
-  if (en_passant_square.has_value()) {
-    Square ep_square = en_passant_square.value();
-    int file = ep_square % 8;
-    int rank = ep_square / 8;
-    fen += static_cast<char>('a' + file);
-    fen += static_cast<char>('1' + rank);
-  } else {
-    fen += '-';
-  }
+  fen += en_passant_fen();
 
   // Halfmove clock
   fen += ' ';
@@ -211,33 +193,19 @@ void Position::make_move(const Move &move) {
   hash ^= en_passant_key(en_passant_square);
 
   en_passant_square.reset();
-  if (piece_type == PAWN || move.is_capture()) {
-    halfmove_clock = 0;
-  } else {
-    halfmove_clock++;
-  }
 
-  if (piece_type == PAWN) {
-    if (abs(square_rank(move.to()) - square_rank(move.from())) == 2) {
-      int to_file = square_file(move.to());
-      int from_rank = square_rank(move.from());
-      int to_rank = square_rank(move.to());
-      int en_passant_rank = (from_rank + to_rank) / 2; // Square between from and to
-      en_passant_square = static_cast<Square>(indexes_to_square(en_passant_rank, to_file));
-    }
+  halfmove_clock++;
+  if (piece_type == PAWN || move.is_capture()) halfmove_clock = 0;
+
+  if (piece_type == PAWN && abs(square_rank(move.to()) - square_rank(move.from())) == 2) {
+    int between_rank = (square_rank(move.from()) + square_rank(move.to())) / 2;
+    en_passant_square = indexes_to_square(between_rank, square_file(move.to()));
   }
 
   // Handle castling
   update_castling_rights(move, captured_square);
   if (move.is_castling()) {
-    Square rook_from, rook_to;
-    if (move.to() > move.from()) {
-      rook_from = static_cast<Square>(move.from() + 3 * EAST);
-      rook_to = static_cast<Square>(move.from() + EAST);
-    } else {
-      rook_from = static_cast<Square>(move.from() + 4 * WEST);
-      rook_to = static_cast<Square>(move.from() + WEST);
-    }
+    auto [rook_from, rook_to] = castling_rook_squares(move.from(), move.to());
 
     uint8_t rook_encoded = lookup_table[rook_from];
     Color rook_color = decode_color(rook_encoded);
@@ -247,12 +215,11 @@ void Position::make_move(const Move &move) {
     add_piece(rook_color, rook_type, rook_to);
   }
 
+  PieceType placed_type = piece_type;
+  if (move.is_promotion()) placed_type = move.promotion_piece();
+
   remove_piece(piece_color, piece_type, move.from());
-  if (move.is_promotion()) {
-    add_piece(piece_color, move.promotion_piece(), move.to());
-  } else {
-    add_piece(piece_color, piece_type, move.to());
-  }
+  add_piece(piece_color, placed_type, move.to());
 
   pass_turn();
 
@@ -300,23 +267,16 @@ void Position::undo_move() {
   Color captured_color = decode_color(undo_info.captured_piece_encoded);
   PieceType captured_type = decode_type(undo_info.captured_piece_encoded);
 
-  remove_piece(moved_color, moved_type, to);
+  PieceType original_type = moved_type;
+  if (move.is_promotion()) original_type = PAWN;
 
-  if (move.is_promotion()) {
-    add_piece(moved_color, PAWN, from);
-  } else {
-    add_piece(moved_color, moved_type, from);
-  }
+  remove_piece(moved_color, moved_type, to);
+  add_piece(moved_color, original_type, from);
 
   if (captured_type != NO_TYPE) add_piece(captured_color, captured_type, captured_square);
 
   if (move.is_castling()) {
-    int is_kingside = (to > from);
-    int rook_from_offset = is_kingside * 3 + (1 - is_kingside) * -4;
-    int rook_to_offset = is_kingside * 1 + (1 - is_kingside) * -1;
-
-    auto rook_from = static_cast<Square>(from + rook_from_offset);
-    auto rook_to = static_cast<Square>(from + rook_to_offset);
+    auto [rook_from, rook_to] = castling_rook_squares(from, to);
 
     uint8_t rook_encoded = lookup_table[rook_to];
     Color rook_color = decode_color(rook_encoded);
@@ -426,4 +386,22 @@ uint64_t Position::en_passant_key(const std::optional<Square> &square) {
   if (!square.has_value()) return 0;
 
   return ZOBRIST_KEYS.en_passant_file[square_file(*square)];
+}
+
+std::string Position::en_passant_fen() const {
+  if (!en_passant_square.has_value()) return "-";
+
+  std::string text;
+  text += static_cast<char>('a' + square_file(*en_passant_square));
+  text += static_cast<char>('1' + square_rank(*en_passant_square));
+
+  return text;
+}
+
+std::pair<Square, Square> Position::castling_rook_squares(Square king_from, Square king_to) {
+  if (king_to > king_from) {
+    return {static_cast<Square>(king_from + 3 * EAST), static_cast<Square>(king_from + EAST)};
+  }
+
+  return {static_cast<Square>(king_from + 4 * WEST), static_cast<Square>(king_from + WEST)};
 }
