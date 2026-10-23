@@ -8,9 +8,9 @@
 
 #include <string>
 
-class ClessEngine {
+class Engine {
 public:
-  ClessEngine() : pos(INITIAL_POSITION_FEN) {}
+  Engine() : pos(INITIAL_POSITION_FEN) {}
 
   std::string get_fen() const { return pos.get_fen(); }
   void set_fen(const std::string &fen) {

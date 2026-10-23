@@ -9,9 +9,9 @@
 #include <thread>
 #include <vector>
 
-class ClessUCI {
+class Uci {
 public:
-  ~ClessUCI();
+  ~Uci();
 
   void run();
 
@@ -21,7 +21,7 @@ private:
   static constexpr int MULTIPV_MAX = 256;
   static constexpr int MOVE_OVERHEAD_MAX = 5000;
 
-  ClessEngine engine;
+  Engine engine;
 
   // NOTE: only read while a search is being started
   int multipv = 1;

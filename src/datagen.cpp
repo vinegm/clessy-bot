@@ -10,7 +10,7 @@
 #include <cstdlib>
 #include <map>
 
-void ClessDatagen::add_options(CLI::App &app) {
+void Datagen::add_options(CLI::App &app) {
   app.add_option_function<std::string>(
          "--format",
          [this](const std::string &name) {
@@ -56,7 +56,7 @@ void ClessDatagen::add_options(CLI::App &app) {
   app.add_option("--seed", options.seed, "random seed, 0 picks one")->capture_default_str();
 }
 
-bool ClessDatagen::open_output() {
+bool Datagen::open_output() {
   std::ifstream existing(options.output, std::ios::binary);
   bool has_data = existing.good() && existing.peek() != std::ifstream::traits_type::eof();
   existing.close();
@@ -86,7 +86,7 @@ bool ClessDatagen::open_output() {
   return true;
 }
 
-SearchLimits ClessDatagen::search_limits() const {
+SearchLimits Datagen::search_limits() const {
   SearchLimits limits;
   limits.depth = options.depth;
   limits.nodes = options.nodes;
@@ -94,7 +94,7 @@ SearchLimits ClessDatagen::search_limits() const {
   return limits;
 }
 
-bool ClessDatagen::insufficient_material() const {
+bool Datagen::insufficient_material() const {
   if (pos.get_bb(WHITE, PAWN) | pos.get_bb(BLACK, PAWN)) return false;
   if (pos.get_bb(WHITE, ROOK) | pos.get_bb(BLACK, ROOK)) return false;
   if (pos.get_bb(WHITE, QUEEN) | pos.get_bb(BLACK, QUEEN)) return false;
@@ -110,7 +110,7 @@ bool ClessDatagen::insufficient_material() const {
   return (bishops & DARK_SQUARES) == bishops || (bishops & DARK_SQUARES) == 0;
 }
 
-int ClessDatagen::repetition_count() const {
+int Datagen::repetition_count() const {
   // NOTE: Position::is_repetition stops at twofold, a real game needs the third occurrence
   uint64_t key = history.back();
   int lookback = std::min<int>(pos.halfmove_clock, static_cast<int>(history.size()) - 1);
@@ -123,27 +123,27 @@ int ClessDatagen::repetition_count() const {
   return count;
 }
 
-const char *ClessDatagen::result_for(Outcome outcome, Color side_to_move) {
+const char *Datagen::result_for(Outcome outcome, Color side_to_move) {
   if (outcome == Outcome::Draw) return "0.5";
   if (outcome == win_for(side_to_move)) return "1.0";
 
   return "0.0";
 }
 
-ClessDatagen::Outcome ClessDatagen::win_for(Color winner) {
+Datagen::Outcome Datagen::win_for(Color winner) {
   if (winner == WHITE) return Outcome::WhiteWin;
 
   return Outcome::BlackWin;
 }
 
-BinpackWriter::Result ClessDatagen::binpack_result(Outcome outcome) {
+BinpackWriter::Result Datagen::binpack_result(Outcome outcome) {
   if (outcome == Outcome::WhiteWin) return BinpackWriter::WHITE_WIN;
   if (outcome == Outcome::BlackWin) return BinpackWriter::BLACK_WIN;
 
   return BinpackWriter::DRAW;
 }
 
-bool ClessDatagen::setup_opening() {
+bool Datagen::setup_opening() {
   pos.set_fen(INITIAL_POSITION_FEN);
 
   for (int i = 0; i < options.random_plies; i++) {
@@ -161,7 +161,7 @@ bool ClessDatagen::setup_opening() {
   return std::abs(Search::run(pos, search_limits()).score) <= options.opening_max_score;
 }
 
-ClessDatagen::Outcome ClessDatagen::play_game() {
+Datagen::Outcome Datagen::play_game() {
   plies.clear();
 
   history.clear();
@@ -223,7 +223,7 @@ ClessDatagen::Outcome ClessDatagen::play_game() {
   return Outcome::Unfinished;
 }
 
-void ClessDatagen::write_game(const std::string &start_fen, Outcome outcome) {
+void Datagen::write_game(const std::string &start_fen, Outcome outcome) {
   if (options.format == Format::Binpack) {
     Position start(start_fen);
     binpack.begin_game(start, binpack_result(outcome), static_cast<uint16_t>(plies.size()));
@@ -247,7 +247,7 @@ void ClessDatagen::write_game(const std::string &start_fen, Outcome outcome) {
   out.flush();
 }
 
-void ClessDatagen::report(int64_t games) const {
+void Datagen::report(int64_t games) const {
   auto now = std::chrono::steady_clock::now();
   int64_t elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - started).count();
   int64_t per_second = 0;
@@ -268,7 +268,7 @@ void ClessDatagen::report(int64_t games) const {
   );
 }
 
-int ClessDatagen::run(int argc, char **argv) {
+int Datagen::run(int argc, char **argv) {
   CLI::App app{"Self-play training data for clessy-nnue", "clessy datagen"};
   add_options(app);
 
