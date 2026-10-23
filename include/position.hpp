@@ -35,24 +35,14 @@ public:
   int halfmove_clock{};
   int fullmove_counter{};
 
-  constexpr int get_bb_idx(Color color, PieceType type) const {
-    int code = encode_piece(color, type);
-
-    if (color == WHITE) return code - 1;
-
-    return code - 3;
-  }
-  constexpr uint64_t get_bb(Color color, PieceType type) const {
-    return bitboards[get_bb_idx(color, type)];
-  }
-  constexpr uint64_t &get_bb_ref(Color color, PieceType type) {
-    return bitboards[get_bb_idx(color, type)];
+  constexpr uint64_t pieces(Color color, PieceType type) const {
+    return bitboards[bitboard_index(color, type)];
   }
 
   void set_fen(const std::string &fen);
-  std::string get_fen() const;
+  std::string fen() const;
   bool is_repetition() const;
-  Piece get_piece_at(Square square);
+  Piece piece_at(Square square);
   void make_move(const Move &move);
   void undo_move();
 
@@ -60,7 +50,7 @@ public:
   void make_null_move();
 
   bool has_non_pawn_material(Color color) const {
-    return (occupancy[color] & ~get_bb(color, PAWN) & ~get_bb(color, KING)) != 0;
+    return (occupancy[color] & ~pieces(color, PAWN) & ~pieces(color, KING)) != 0;
   }
 
   NNUE::Accumulator &accumulator() const { return accumulator_slot.value; }
@@ -86,7 +76,15 @@ private:
   std::vector<UndoInfo> undo_stack{};
   uint64_t bitboards[12]{};
 
-  Square get_captured_square(const Move &move) const;
+  static constexpr int bitboard_index(Color color, PieceType type) {
+    int code = encode_piece(color, type);
+
+    if (color == WHITE) return code - 1;
+
+    return code - 3;
+  }
+
+  Square capture_square(const Move &move) const;
   void push_undo_info(const Move &move, Piece captured_piece_encoded, uint64_t hash_before);
   void update_castling_rights(const Move &move, Square captured_square);
   void add_piece(Color color, PieceType piece, Square square);

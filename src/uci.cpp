@@ -98,7 +98,7 @@ void Uci::handle_debug(const std::vector<std::string> &tokens) {
   if (tokens.size() > 1) return Logger::set_level(Logger::Level::Debug);
 
   // NOTE: a bare "debug" toggles the level
-  if (Logger::get_level() == Logger::Level::Debug) {
+  if (Logger::level() == Logger::Level::Debug) {
     Logger::set_level(Logger::Level::Info);
     return Logger::info("debug mode off");
   }
@@ -162,7 +162,7 @@ void Uci::handle_go(const std::vector<std::string> &tokens) {
 
   if (tokens.size() > 1 && tokens[1] == "perft") return handle_perft(tokens);
 
-  if (engine.get_legal_moves().empty()) return Logger::respond("bestmove (none)");
+  if (engine.legal_moves().empty()) return Logger::respond("bestmove (none)");
 
   SearchLimits limits;
   limits.multipv = multipv;
@@ -220,16 +220,16 @@ void Uci::handle_d() {
 
   Piece squares[64];
   for (int square = 0; square < 64; square++) {
-    squares[square] = engine.get_piece_at(static_cast<Square>(square));
+    squares[square] = engine.piece_at(static_cast<Square>(square));
   }
 
   Logger::respond(UciFormatter::format_board(squares));
   Logger::respond("");
 
-  Logger::respond("Fen: ", engine.get_fen());
+  Logger::respond("Fen: ", engine.fen());
 
   char hash_text[19];
-  snprintf(hash_text, sizeof(hash_text), "0x%016lx", engine.get_hash());
+  snprintf(hash_text, sizeof(hash_text), "0x%016lx", engine.hash());
   Logger::respond("Hash: ", hash_text);
 
   std::string side = "white";
@@ -240,7 +240,7 @@ void Uci::handle_d() {
   if (engine.in_check()) in_check = "yes";
   Logger::respond("In check: ", in_check);
 
-  MoveList legal_moves = engine.get_legal_moves();
+  MoveList legal_moves = engine.legal_moves();
   Logger::respond("Legal moves (", legal_moves.count, "): ", Notation::moves_to_uci(legal_moves));
 }
 
@@ -368,7 +368,7 @@ bool Uci::resolve_move(const std::string &uci, Move &move) const {
   } catch (const std::exception &) { return false; }
 
   // NOTE: only the legal move knows its move type
-  MoveList legal_moves = engine.get_legal_moves();
+  MoveList legal_moves = engine.legal_moves();
   for (int i = 0; i < legal_moves.count; i++) {
     if (legal_moves.moves[i].to() != parsed.to()) continue;
     if (legal_moves.moves[i].from() != parsed.from()) continue;

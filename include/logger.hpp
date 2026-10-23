@@ -20,8 +20,8 @@ public:
   };
 
   static void set_level(Level level) { min_level.store(level, std::memory_order_relaxed); }
-  static Level get_level() { return min_level.load(std::memory_order_relaxed); }
-  static bool enabled(Level level) { return level <= get_level(); }
+  static Level level() { return min_level.load(std::memory_order_relaxed); }
+  static bool enabled(Level level) { return level <= min_level.load(std::memory_order_relaxed); }
 
   template<typename... Args>
   static std::string format(Args &&...args) {

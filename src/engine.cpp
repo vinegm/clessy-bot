@@ -6,13 +6,13 @@
 #include <cstdint>
 #include <vector>
 
-MoveList Engine::get_legal_moves() const {
-  if (legal_cache_valid) return legal_moves;
+MoveList Engine::legal_moves() const {
+  if (legal_cache_valid) return legal_move_cache;
 
-  legal_moves = MoveGenerator::generate_legal_moves(pos);
+  legal_move_cache = MoveGenerator::generate_legal_moves(pos);
   legal_cache_valid = true;
 
-  return legal_moves;
+  return legal_move_cache;
 }
 
 void Engine::make_move(const Move &move) {
@@ -29,7 +29,7 @@ std::vector<std::pair<Move, uint64_t>> Engine::perft_divide(int depth) {
   std::vector<std::pair<Move, uint64_t>> results;
   if (depth == 0) return results;
 
-  for (const Move &move : get_legal_moves()) {
+  for (const Move &move : legal_moves()) {
     pos.make_move(move);
     results.emplace_back(move, perft(pos, depth - 1));
     pos.undo_move();
