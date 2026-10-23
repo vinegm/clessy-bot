@@ -30,8 +30,11 @@ public:
     int32_t output_bias;
   };
 
+  // NOTE: int16 halves the memory every move touches and doubles the SIMD width. It
+  // cannot overflow: clessy-nnue clamps feature weights and bias to 1.98, so even
+  // 34 terms of 505 (32 pieces, the bias, a promotion mid-update) stay under 17200
   struct Accumulator {
-    int32_t values[2][HIDDEN_SIZE]; // [Color]
+    int16_t values[2][HIDDEN_SIZE]; // [Color]
 
     // NOTE: the network generation it was built for, 0 means not built
     uint32_t generation = 0;

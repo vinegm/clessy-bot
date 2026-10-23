@@ -27,7 +27,7 @@ void NNUE::add_feature(Accumulator &accumulator, Color color, PieceType type, Sq
     int feature = feature_index(Color(perspective), color, type, square);
 
     const int16_t *weights = network->feature_weights[feature];
-    int32_t *values = accumulator.values[perspective];
+    int16_t *values = accumulator.values[perspective];
     for (int neuron = 0; neuron < HIDDEN_SIZE; neuron++) {
       values[neuron] += weights[neuron];
     }
@@ -39,7 +39,7 @@ void NNUE::remove_feature(Accumulator &accumulator, Color color, PieceType type,
     int feature = feature_index(Color(perspective), color, type, square);
 
     const int16_t *weights = network->feature_weights[feature];
-    int32_t *values = accumulator.values[perspective];
+    int16_t *values = accumulator.values[perspective];
     for (int neuron = 0; neuron < HIDDEN_SIZE; neuron++) {
       values[neuron] -= weights[neuron];
     }
@@ -108,15 +108,18 @@ int NNUE::evaluate(const Position &pos) {
   Accumulator &accumulator = pos.accumulator();
   if (accumulator.generation != network_generation) refresh(pos, accumulator);
 
-  const int32_t *ours = accumulator.values[pos.to_move];
-  const int32_t *theirs = accumulator.values[opposite_color(pos.to_move)];
+  const int16_t *ours = accumulator.values[pos.to_move];
+  const int16_t *theirs = accumulator.values[opposite_color(pos.to_move)];
 
-  int64_t sum = network->output_bias;
+  // NOTE: int32 holds the dot, it vectorizes where int64 does not. Output weights are
+  // clamped to 127, so 512 terms of at most 255 * 127 stay under 16.6M
+  int32_t dot = 0;
   for (int neuron = 0; neuron < HIDDEN_SIZE; neuron++) {
-    sum += static_cast<int64_t>(crelu(ours[neuron])) * network->output_weights[neuron];
-    sum +=
-        static_cast<int64_t>(crelu(theirs[neuron])) * network->output_weights[HIDDEN_SIZE + neuron];
+    dot += crelu(ours[neuron]) * network->output_weights[neuron];
+    dot += crelu(theirs[neuron]) * network->output_weights[HIDDEN_SIZE + neuron];
   }
+
+  int64_t sum = static_cast<int64_t>(dot) + network->output_bias;
 
   // NOTE: truncates toward zero, like clessy_nnue/inference.py
   return static_cast<int>(sum * SCALE / (static_cast<int64_t>(QA) * QB));
