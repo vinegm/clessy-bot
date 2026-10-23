@@ -95,12 +95,12 @@ SearchLimits Datagen::search_limits() const {
 }
 
 bool Datagen::insufficient_material() const {
-  if (pos.get_bb(WHITE, PAWN) | pos.get_bb(BLACK, PAWN)) return false;
-  if (pos.get_bb(WHITE, ROOK) | pos.get_bb(BLACK, ROOK)) return false;
-  if (pos.get_bb(WHITE, QUEEN) | pos.get_bb(BLACK, QUEEN)) return false;
+  if (pos.pieces(WHITE, PAWN) | pos.pieces(BLACK, PAWN)) return false;
+  if (pos.pieces(WHITE, ROOK) | pos.pieces(BLACK, ROOK)) return false;
+  if (pos.pieces(WHITE, QUEEN) | pos.pieces(BLACK, QUEEN)) return false;
 
-  uint64_t knights = pos.get_bb(WHITE, KNIGHT) | pos.get_bb(BLACK, KNIGHT);
-  uint64_t bishops = pos.get_bb(WHITE, BISHOP) | pos.get_bb(BLACK, BISHOP);
+  uint64_t knights = pos.pieces(WHITE, KNIGHT) | pos.pieces(BLACK, KNIGHT);
+  uint64_t bishops = pos.pieces(WHITE, BISHOP) | pos.pieces(BLACK, BISHOP);
 
   if (count_bits(knights | bishops) <= 1) return true;
 
@@ -195,7 +195,7 @@ Datagen::Outcome Datagen::play_game() {
     record.score = result.score;
     record.side_to_move = pos.to_move;
     record.sample = quiet;
-    if (quiet && options.format == Format::Text) record.fen = pos.get_fen();
+    if (quiet && options.format == Format::Text) record.fen = pos.fen();
     plies.push_back(record);
 
     // NOTE: playing a decided game to mate rarely changes the result
@@ -317,7 +317,7 @@ int Datagen::run(int argc, char **argv) {
     }
 
     // NOTE: the binpack record replays from here
-    std::string start_fen = pos.get_fen();
+    std::string start_fen = pos.fen();
 
     Outcome outcome = play_game();
 

@@ -128,7 +128,7 @@ int MoveGenerator::generate_pawn_moves(
   constexpr uint64_t StartingRank = pawn_starting_rank(Us);
   constexpr uint64_t PromotionRank = pawn_promotion_rank(Us);
 
-  const uint64_t our_pawns = position.get_bb(Us, PAWN);
+  const uint64_t our_pawns = position.pieces(Us, PAWN);
   const uint64_t enemy_pieces = position.occupancy[Them];
   const uint64_t empty_squares = ~position.occupancy[ANY_COLOR];
 
@@ -218,7 +218,7 @@ int MoveGenerator::generate_piece_moves(
   const Color us = position.to_move;
   const Color them = opposite_color(us);
 
-  uint64_t our_pieces_bb = position.get_bb(us, PieceT);
+  uint64_t our_pieces_bb = position.pieces(us, PieceT);
   const uint64_t our_occupancy = position.occupancy[us];
   const uint64_t enemy_occupancy = position.occupancy[them];
 
@@ -253,7 +253,7 @@ int MoveGenerator::generate_castling_moves(
   if (position.castling_rights == NO_CASTLING) return 0;
   if (masks.checkers) return 0;
 
-  const uint64_t king_bb = position.get_bb(us, KING);
+  const uint64_t king_bb = position.pieces(us, KING);
   const Square king_square = lsb_square(king_bb);
 
   // King-side castling
@@ -296,7 +296,7 @@ MoveGenerator::Masks MoveGenerator::generate_masks(const Position &position) {
   Masks masks;
 
   // NOTE: otherwise the king could step back along a checking ray
-  const uint64_t occupancy_without_king = position.occupancy[ANY_COLOR] ^ position.get_bb(us, KING);
+  const uint64_t occupancy_without_king = position.occupancy[ANY_COLOR] ^ position.pieces(us, KING);
   masks.enemy_attacks = attack_map(position, them, occupancy_without_king);
 
   find_checkers(position, king_square, masks);
@@ -305,19 +305,19 @@ MoveGenerator::Masks MoveGenerator::generate_masks(const Position &position) {
   masks.check_mask |= masks.checkers;
   if (!masks.checkers) masks.check_mask = ~0ULL;
 
-  const uint64_t queens = position.get_bb(them, QUEEN);
+  const uint64_t queens = position.pieces(them, QUEEN);
 
   find_pins(
       position,
       king_square,
-      position.get_bb(them, ROOK) | queens,
+      position.pieces(them, ROOK) | queens,
       Attacks::rook_attacks,
       masks
   );
   find_pins(
       position,
       king_square,
-      position.get_bb(them, BISHOP) | queens,
+      position.pieces(them, BISHOP) | queens,
       Attacks::bishop_attacks,
       masks
   );
@@ -328,29 +328,29 @@ MoveGenerator::Masks MoveGenerator::generate_masks(const Position &position) {
 uint64_t MoveGenerator::attack_map(const Position &position, Color color, uint64_t occupancy) {
   uint64_t attacks = 0;
 
-  uint64_t pawns = position.get_bb(color, PAWN);
+  uint64_t pawns = position.pieces(color, PAWN);
   while (pawns) {
     attacks |= Attacks::pawn_attacks(color, pop_lsb_square(pawns));
   }
 
-  uint64_t knights = position.get_bb(color, KNIGHT);
+  uint64_t knights = position.pieces(color, KNIGHT);
   while (knights) {
     attacks |= Attacks::knight_attacks(pop_lsb_square(knights));
   }
 
-  uint64_t queens = position.get_bb(color, QUEEN);
+  uint64_t queens = position.pieces(color, QUEEN);
 
-  uint64_t diagonal_sliders = position.get_bb(color, BISHOP) | queens;
+  uint64_t diagonal_sliders = position.pieces(color, BISHOP) | queens;
   while (diagonal_sliders) {
     attacks |= Attacks::bishop_attacks(pop_lsb_square(diagonal_sliders), occupancy);
   }
 
-  uint64_t straight_sliders = position.get_bb(color, ROOK) | queens;
+  uint64_t straight_sliders = position.pieces(color, ROOK) | queens;
   while (straight_sliders) {
     attacks |= Attacks::rook_attacks(pop_lsb_square(straight_sliders), occupancy);
   }
 
-  const uint64_t king = position.get_bb(color, KING);
+  const uint64_t king = position.pieces(color, KING);
   if (king) attacks |= Attacks::king_attacks(lsb_square(king));
 
   return attacks;
@@ -361,9 +361,9 @@ void MoveGenerator::find_checkers(const Position &position, Square king_square, 
   const Color them = opposite_color(us);
   const uint64_t all_pieces = position.occupancy[ANY_COLOR];
   const uint64_t king_bb = square_to_bit(king_square);
-  const uint64_t queens = position.get_bb(them, QUEEN);
+  const uint64_t queens = position.pieces(them, QUEEN);
 
-  uint64_t diagonal_attackers = position.get_bb(them, BISHOP) | queens;
+  uint64_t diagonal_attackers = position.pieces(them, BISHOP) | queens;
   uint64_t diagonal_checkers =
       Attacks::bishop_attacks(king_square, all_pieces) & diagonal_attackers;
 
@@ -378,7 +378,7 @@ void MoveGenerator::find_checkers(const Position &position, Square king_square, 
     masks.check_mask |= between;
   }
 
-  uint64_t straight_attackers = position.get_bb(them, ROOK) | queens;
+  uint64_t straight_attackers = position.pieces(them, ROOK) | queens;
   uint64_t straight_checkers = Attacks::rook_attacks(king_square, all_pieces) & straight_attackers;
 
   while (straight_checkers) {
@@ -393,8 +393,8 @@ void MoveGenerator::find_checkers(const Position &position, Square king_square, 
   }
 
   // NOTE: pawn and knight checks can't be blocked
-  masks.checkers |= Attacks::pawn_attacks(us, king_square) & position.get_bb(them, PAWN);
-  masks.checkers |= Attacks::knight_attacks(king_square) & position.get_bb(them, KNIGHT);
+  masks.checkers |= Attacks::pawn_attacks(us, king_square) & position.pieces(them, PAWN);
+  masks.checkers |= Attacks::knight_attacks(king_square) & position.pieces(them, KNIGHT);
 }
 
 void MoveGenerator::find_pins(
@@ -429,25 +429,25 @@ bool MoveGenerator::is_square_attacked(const Position &position, Square square, 
   const uint64_t all_pieces = position.occupancy[ANY_COLOR];
 
   if (Attacks::pawn_attacks(opposite_color(enemy_color), square)
-      & position.get_bb(enemy_color, PAWN)) {
+      & position.pieces(enemy_color, PAWN)) {
     return true;
   }
 
-  if (Attacks::knight_attacks(square) & position.get_bb(enemy_color, KNIGHT)) return true;
+  if (Attacks::knight_attacks(square) & position.pieces(enemy_color, KNIGHT)) return true;
 
   const uint64_t diagonal_attackers =
-      position.get_bb(enemy_color, BISHOP) | position.get_bb(enemy_color, QUEEN);
+      position.pieces(enemy_color, BISHOP) | position.pieces(enemy_color, QUEEN);
   if (diagonal_attackers && (Attacks::bishop_attacks(square, all_pieces) & diagonal_attackers)) {
     return true;
   }
 
   const uint64_t straight_attackers =
-      position.get_bb(enemy_color, ROOK) | position.get_bb(enemy_color, QUEEN);
+      position.pieces(enemy_color, ROOK) | position.pieces(enemy_color, QUEEN);
   if (straight_attackers && (Attacks::rook_attacks(square, all_pieces) & straight_attackers)) {
     return true;
   }
 
-  if (Attacks::king_attacks(square) & position.get_bb(enemy_color, KING)) return true;
+  if (Attacks::king_attacks(square) & position.pieces(enemy_color, KING)) return true;
 
   return false;
 }
@@ -467,5 +467,5 @@ bool MoveGenerator::is_legal_move(Position &position, const Move &move) {
 }
 
 Square MoveGenerator::find_king(const Position &position, Color color) {
-  return lsb_square(position.get_bb(color, KING));
+  return lsb_square(position.pieces(color, KING));
 }

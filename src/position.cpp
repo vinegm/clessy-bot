@@ -95,7 +95,7 @@ void Position::set_fen(const std::string &fen) {
   hash ^= Zobrist::en_passant_key(en_passant_square);
 }
 
-std::string Position::get_fen() const {
+std::string Position::fen() const {
   std::string fen;
 
   // Piece placement
@@ -169,7 +169,7 @@ std::string Position::get_fen() const {
   return fen;
 }
 
-Piece Position::get_piece_at(Square square) { return lookup_table[square]; }
+Piece Position::piece_at(Square square) { return lookup_table[square]; }
 
 void Position::make_move(const Move &move) {
   const uint64_t hash_before = hash;
@@ -177,7 +177,7 @@ void Position::make_move(const Move &move) {
   Piece encoded_piece = lookup_table[move.from()];
   Color piece_color = decode_color(encoded_piece);
   PieceType piece_type = decode_type(encoded_piece);
-  Square captured_square = get_captured_square(move);
+  Square captured_square = capture_square(move);
 
   Piece captured_piece_encoded = NO_PIECE;
   if (move.is_capture()) {
@@ -259,7 +259,7 @@ void Position::undo_move() {
   Move move = undo_info.move;
   Square from = move.from();
   Square to = move.to();
-  Square captured_square = get_captured_square(move);
+  Square captured_square = capture_square(move);
 
   uint8_t moved_piece_encoded = lookup_table[to];
   Color moved_color = decode_color(moved_piece_encoded);
@@ -306,7 +306,7 @@ bool Position::is_repetition() const {
   return false;
 }
 
-Square Position::get_captured_square(const Move &move) const {
+Square Position::capture_square(const Move &move) const {
   if (move.is_en_passant()) {
     int to_file = square_file(move.to());
     int from_rank = square_rank(move.from());
@@ -349,7 +349,7 @@ void Position::update_castling_rights(const Move &move, Square captured_square) 
 // NOTE: the only places the board changes, so the accumulator follows every move
 void Position::add_piece(Color color, PieceType piece, Square square) {
   uint64_t square_bit = square_to_bit(square);
-  get_bb_ref(color, piece) |= square_bit;
+  bitboards[bitboard_index(color, piece)] |= square_bit;
   occupancy[color] |= square_bit;
   occupancy[ANY_COLOR] |= square_bit;
 
@@ -363,7 +363,7 @@ void Position::add_piece(Color color, PieceType piece, Square square) {
 
 void Position::remove_piece(Color color, PieceType piece, Square square) {
   uint64_t square_bit = square_to_bit(square);
-  get_bb_ref(color, piece) &= ~square_bit;
+  bitboards[bitboard_index(color, piece)] &= ~square_bit;
   occupancy[color] &= ~square_bit;
   occupancy[ANY_COLOR] &= ~square_bit;
 
