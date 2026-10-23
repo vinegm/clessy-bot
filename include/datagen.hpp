@@ -38,7 +38,7 @@ private:
 
     // NOTE: nodes, not time, so the labels don't depend on the host
     int64_t nodes = 5000;
-    int depth = MAX_SEARCH_DEPTH;
+    int depth = Search::MAX_DEPTH;
 
     int random_plies = 8;
     int opening_max_score = 800;

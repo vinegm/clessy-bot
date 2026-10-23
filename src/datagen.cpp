@@ -158,7 +158,7 @@ bool ClessDatagen::setup_opening() {
   if (options.opening_max_score <= 0) return true;
 
   // NOTE: random moves often leave the game already decided, which teaches the net nothing
-  return std::abs(run_search(pos, search_limits()).score) <= options.opening_max_score;
+  return std::abs(Search::run(pos, search_limits()).score) <= options.opening_max_score;
 }
 
 ClessDatagen::Outcome ClessDatagen::play_game() {
@@ -175,7 +175,7 @@ ClessDatagen::Outcome ClessDatagen::play_game() {
   for (int ply = 0; ply < options.max_plies; ply++) {
     MoveList moves = MoveGenerator::generate_legal_moves(pos);
 
-    // NOTE: run_search reads moves[0], so a terminal position must never reach it
+    // NOTE: Search::run reads moves[0], so a terminal position must never reach it
     if (moves.empty() && !MoveGenerator::is_in_check(pos, pos.to_move)) return Outcome::Draw;
     if (moves.empty()) return win_for(opposite_color(pos.to_move));
 
@@ -184,11 +184,11 @@ ClessDatagen::Outcome ClessDatagen::play_game() {
     if (insufficient_material()) return Outcome::Draw;
 
     bool in_check = MoveGenerator::is_in_check(pos, pos.to_move);
-    SearchResult result = run_search(pos, limits);
+    SearchResult result = Search::run(pos, limits);
 
     // NOTE: the trainer fits a static eval, so tactical positions are noise
     bool quiet = !in_check && !result.best_move.is_capture() && !result.best_move.is_promotion()
-                 && !is_mate_score(result.score);
+                 && !Search::is_mate_score(result.score);
 
     PlyRecord record;
     record.move = result.best_move;

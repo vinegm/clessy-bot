@@ -175,7 +175,7 @@ void ClessUCI::handle_go(const std::vector<std::string> &tokens) {
 
   // NOTE: per spec, a go that bounds nothing searches until stop
   bool bounded = limits.has_clock() || limits.nodes >= 0 || limits.mate > 0
-                 || limits.depth != MAX_SEARCH_DEPTH;
+                 || limits.depth != Search::MAX_DEPTH;
   if (!bounded && !ponder) limits.infinite = true;
 
   start_search(limits, ponder);

@@ -10,23 +10,40 @@
 
 class Position;
 
-// NOTE: a mate is MATE_SCORE - ply, so shorter mates score higher
-constexpr int MATE_SCORE = 32000;
-constexpr int INFINITE_SCORE = MATE_SCORE + 1;
-constexpr int MAX_SEARCH_DEPTH = 64;
+struct SearchLimits;
+struct SearchResult;
+struct SearchControl;
 
-constexpr bool is_mate_score(int score) {
-  return score > MATE_SCORE - 1000 || score < -(MATE_SCORE - 1000);
-}
+using SearchInfoCallback = std::function<void(const SearchResult &)>;
 
-constexpr int mate_distance_moves(int score) {
-  int plies = MATE_SCORE - std::abs(score);
-  return (plies + 1) / 2;
-}
+class Search {
+public:
+  Search() = delete;
+
+  // NOTE: a mate is MATE_SCORE - ply, so shorter mates score higher
+  static constexpr int MATE_SCORE = 32000;
+  static constexpr int INFINITE_SCORE = MATE_SCORE + 1;
+  static constexpr int MAX_DEPTH = 64;
+
+  static SearchResult
+      run(Position &pos,
+          const SearchLimits &limits,
+          const SearchInfoCallback &on_iteration = nullptr,
+          SearchControl *control = nullptr);
+
+  static constexpr bool is_mate_score(int score) {
+    return score > MATE_SCORE - 1000 || score < -(MATE_SCORE - 1000);
+  }
+
+  static constexpr int mate_distance_moves(int score) {
+    int plies = MATE_SCORE - std::abs(score);
+    return (plies + 1) / 2;
+  }
+};
 
 // NOTE: negative means not set, times are in milliseconds
 struct SearchLimits {
-  int depth = MAX_SEARCH_DEPTH;
+  int depth = Search::MAX_DEPTH;
   int64_t nodes = -1;
 
   int64_t movetime = -1;
@@ -64,12 +81,3 @@ struct SearchResult {
 
   std::vector<Move> pv;
 };
-
-using SearchInfoCallback = std::function<void(const SearchResult &)>;
-
-SearchResult run_search(
-    Position &pos,
-    const SearchLimits &limits,
-    const SearchInfoCallback &on_iteration = nullptr,
-    SearchControl *control = nullptr
-);

@@ -22,10 +22,10 @@ constexpr int KILLER_ORDER = 99000;
 constexpr int MAX_REDUCED_MOVES = 64;
 
 struct LateMoveReductions {
-  int values[MAX_SEARCH_DEPTH + 1][MAX_REDUCED_MOVES]{};
+  int values[Search::MAX_DEPTH + 1][MAX_REDUCED_MOVES]{};
 
   LateMoveReductions() noexcept {
-    for (int depth = 1; depth <= MAX_SEARCH_DEPTH; depth++) {
+    for (int depth = 1; depth <= Search::MAX_DEPTH; depth++) {
       for (int move_index = 1; move_index < MAX_REDUCED_MOVES; move_index++) {
         values[depth][move_index] =
             static_cast<int>(0.75 + std::log(depth) * std::log(move_index) / 2.25);
@@ -75,7 +75,7 @@ public:
       rotate_best_lines(root_moves, iteration);
 
       if (limits.infinite) continue;
-      if (is_mate_score(result.score)) break;
+      if (Search::is_mate_score(result.score)) break;
       if (out_of_budget()) break;
     }
 
@@ -115,7 +115,7 @@ private:
     current.depth = depth;
     current.multipv = line + 1;
 
-    int alpha = -INFINITE_SCORE;
+    int alpha = -Search::INFINITE_SCORE;
     bool has_move = false;
 
     for (const Move &move : root_moves) {
@@ -125,7 +125,8 @@ private:
 
       int score = 0;
       if (has_move) score = -negamax(depth - 1, 1, -alpha - 1, -alpha);
-      if (!has_move || score > alpha) score = -negamax(depth - 1, 1, -INFINITE_SCORE, -alpha);
+      if (!has_move || score > alpha)
+        score = -negamax(depth - 1, 1, -Search::INFINITE_SCORE, -alpha);
 
       pos.undo_move();
       if (stopped) break;
@@ -206,7 +207,7 @@ private:
   }
 
   void append_pv(std::vector<Move> &out, int ply) const {
-    if (ply >= MAX_SEARCH_DEPTH) return;
+    if (ply >= Search::MAX_DEPTH) return;
 
     for (int i = 0; i < pv_length[ply]; i++) {
       out.push_back(pv_table[ply][i]);
@@ -219,7 +220,7 @@ private:
 
     const bool is_pv = beta - alpha > 1;
 
-    if (ply < MAX_SEARCH_DEPTH) pv_length[ply] = 0;
+    if (ply < Search::MAX_DEPTH) pv_length[ply] = 0;
 
     if (depth == 0) return quiescence(alpha, beta, ply);
 
@@ -241,7 +242,7 @@ private:
     const bool in_check = MoveGenerator::is_in_check(pos, pos.to_move);
 
     MoveList moves = MoveGenerator::generate_legal_moves(pos);
-    if (moves.empty() && in_check) return -(MATE_SCORE - ply);
+    if (moves.empty() && in_check) return -(Search::MATE_SCORE - ply);
     if (moves.empty()) return 0;
 
     // Null move pruning
@@ -255,7 +256,7 @@ private:
       if (stopped) return 0;
 
       // NOTE: a mate proven by a free move is only a bound, never a distance
-      if (score >= beta && is_mate_score(score)) return beta;
+      if (score >= beta && Search::is_mate_score(score)) return beta;
 
       if (score >= beta) return score;
     }
@@ -263,7 +264,7 @@ private:
     order_quiet_aware(moves, hash_move, ply);
 
     int original_alpha = alpha;
-    int best = -INFINITE_SCORE;
+    int best = -Search::INFINITE_SCORE;
     Move best_move = moves[0];
     int move_index = 0;
 
@@ -310,12 +311,12 @@ private:
   bool has_deadline = false;
   bool ponder_active = false;
 
-  Move killers[MAX_SEARCH_DEPTH][2]{};
+  Move killers[Search::MAX_DEPTH][2]{};
   int history[2][64][64]{}; // [Color][from][to]
 
   // NOTE: row ply holds the best line from that ply down
-  Move pv_table[MAX_SEARCH_DEPTH][MAX_SEARCH_DEPTH]{};
-  int pv_length[MAX_SEARCH_DEPTH]{};
+  Move pv_table[Search::MAX_DEPTH][Search::MAX_DEPTH]{};
+  int pv_length[Search::MAX_DEPTH]{};
 
   static bool is_usable(const TranspositionTable::Entry &entry, int score, int alpha, int beta) {
     if (entry.bound() == TranspositionTable::EXACT) return true;
@@ -365,12 +366,11 @@ private:
     // NOTE: reducing checks loses exact mate distances
     if (MoveGenerator::is_in_check(pos, pos.to_move)) return 0;
 
-    int reduction =
-        LATE_MOVE_REDUCTIONS
-            .values[std::min(depth, MAX_SEARCH_DEPTH)][std::min(move_index, MAX_REDUCED_MOVES - 1)];
+    int reduction = LATE_MOVE_REDUCTIONS.values[std::min(depth, Search::MAX_DEPTH)]
+                                               [std::min(move_index, MAX_REDUCED_MOVES - 1)];
 
     if (is_pv) reduction--;
-    if (ply < MAX_SEARCH_DEPTH && (move == killers[ply][0] || move == killers[ply][1])) {
+    if (ply < Search::MAX_DEPTH && (move == killers[ply][0] || move == killers[ply][1])) {
       reduction--;
     }
 
@@ -378,18 +378,18 @@ private:
   }
 
   void update_pv(const Move &move, int ply) {
-    if (ply >= MAX_SEARCH_DEPTH) return;
+    if (ply >= Search::MAX_DEPTH) return;
 
     pv_table[ply][0] = move;
 
     int child_length = 0;
-    if (ply + 1 < MAX_SEARCH_DEPTH) child_length = pv_length[ply + 1];
+    if (ply + 1 < Search::MAX_DEPTH) child_length = pv_length[ply + 1];
 
-    for (int i = 0; i < child_length && i + 1 < MAX_SEARCH_DEPTH; i++) {
+    for (int i = 0; i < child_length && i + 1 < Search::MAX_DEPTH; i++) {
       pv_table[ply][i + 1] = pv_table[ply + 1][i];
     }
 
-    pv_length[ply] = std::min(child_length + 1, MAX_SEARCH_DEPTH);
+    pv_length[ply] = std::min(child_length + 1, Search::MAX_DEPTH);
   }
 
   static bool is_quiet(const Move &move) { return !move.is_capture() && !move.is_promotion(); }
@@ -399,7 +399,7 @@ private:
     int &score = history[pos.to_move][move.from()][move.to()];
     score = std::min(score + depth * depth, KILLER_ORDER - 1);
 
-    if (ply < MAX_SEARCH_DEPTH && move != killers[ply][0]) {
+    if (ply < Search::MAX_DEPTH && move != killers[ply][0]) {
       killers[ply][1] = killers[ply][0];
       killers[ply][0] = move;
     }
@@ -418,7 +418,7 @@ private:
   int quiet_aware_score(const Move &move, const Move &hash_move, int ply) {
     if (!is_quiet(move) || move == hash_move) return move_order_score(pos, move, hash_move);
 
-    if (ply < MAX_SEARCH_DEPTH) {
+    if (ply < Search::MAX_DEPTH) {
       if (move == killers[ply][0]) return KILLER_ORDER + 1;
       if (move == killers[ply][1]) return KILLER_ORDER;
     }
@@ -488,14 +488,14 @@ private:
 
   // NOTE: mate scores are relative to the root while searching, but to the node in the table
   static int score_to_table(int score, int ply) {
-    if (!is_mate_score(score)) return score;
+    if (!Search::is_mate_score(score)) return score;
     if (score < 0) return score - ply;
 
     return score + ply;
   }
 
   static int score_from_table(int score, int ply) {
-    if (!is_mate_score(score)) return score;
+    if (!Search::is_mate_score(score)) return score;
     if (score < 0) return score + ply;
 
     return score - ply;
@@ -540,16 +540,16 @@ private:
     return restricted;
   }
   static int max_depth(const SearchLimits &limits) {
-    int depth = std::clamp(limits.depth, 1, MAX_SEARCH_DEPTH);
+    int depth = std::clamp(limits.depth, 1, Search::MAX_DEPTH);
 
     // NOTE: the mating ply still needs depth left to see the empty move list
-    if (limits.mate > 0) depth = std::min(depth, std::clamp(2 * limits.mate, 1, MAX_SEARCH_DEPTH));
+    if (limits.mate > 0) depth = std::min(depth, std::clamp(2 * limits.mate, 1, Search::MAX_DEPTH));
 
     return depth;
   }
 };
 
-SearchResult run_search(
+SearchResult Search::run(
     Position &pos,
     const SearchLimits &limits,
     const SearchInfoCallback &on_iteration,
