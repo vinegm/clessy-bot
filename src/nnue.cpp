@@ -3,6 +3,7 @@
 #include "logger.hpp"
 #include "position.hpp"
 
+#include <algorithm>
 #include <fstream>
 
 void NNUE::refresh(const Position &pos, Accumulator &accumulator) {
@@ -44,6 +45,76 @@ void NNUE::remove_feature(Accumulator &accumulator, Color color, PieceType type,
       values[neuron] -= weights[neuron];
     }
   }
+}
+
+// NOTE: one feature added and one removed, every quiet move and the bulk of the rest,
+// in a single pass instead of a copy and two read-modify-write passes over the child
+void NNUE::update(
+    const Accumulator &parent,
+    Accumulator &child,
+    const FeatureChange &added,
+    const FeatureChange &removed
+) {
+  for (int perspective = 0; perspective < 2; perspective++) {
+    const int16_t *add =
+        network->feature_weights
+            [feature_index(Color(perspective), added.color, added.type, added.square)];
+    const int16_t *sub =
+        network->feature_weights
+            [feature_index(Color(perspective), removed.color, removed.type, removed.square)];
+
+    const int16_t *from = parent.values[perspective];
+    int16_t *to = child.values[perspective];
+    for (int neuron = 0; neuron < HIDDEN_SIZE; neuron++) {
+      to[neuron] = static_cast<int16_t>(from[neuron] + add[neuron] - sub[neuron]);
+    }
+  }
+}
+
+void NNUE::AccumulatorStack::push(const Position &pos) {
+  // NOTE: the board still shows the parent, the only moment it can be refreshed. A
+  // search root is never evaluated itself, so without this no ply under it would
+  // have a parent to build from and every evaluation would refresh from scratch
+  Accumulator &parent = entries[top];
+  if (network && parent.generation != network_generation) refresh(pos, parent);
+
+  top++;
+  if (top == entries.size()) entries.emplace_back();
+
+  Accumulator &entry = entries[top];
+  entry.generation = 0;
+  entry.added_count = 0;
+  entry.removed_count = 0;
+}
+
+void NNUE::AccumulatorStack::advance() {
+  const Accumulator &parent = entries[top - 1];
+  Accumulator &child = entries[top];
+
+  // NOTE: nothing to build from, evaluate refreshes this ply if it ever gets there
+  if (!parent.is_computed()) return;
+
+  int first_add = 0;
+  int first_remove = 0;
+  if (child.added_count > 0 && child.removed_count > 0) {
+    update(parent, child, child.added[0], child.removed[0]);
+    first_add = 1;
+    first_remove = 1;
+  } else {
+    std::copy(&parent.values[0][0], &parent.values[0][0] + 2 * HIDDEN_SIZE, &child.values[0][0]);
+  }
+
+  for (int i = first_add; i < child.added_count; i++) {
+    const FeatureChange &change = child.added[i];
+    add_feature(child, change.color, change.type, change.square);
+  }
+
+  for (int i = first_remove; i < child.removed_count; i++) {
+    const FeatureChange &change = child.removed[i];
+    remove_feature(child, change.color, change.type, change.square);
+  }
+
+  child.generation = parent.generation;
 }
 
 bool NNUE::load(const std::string &path) {
@@ -105,7 +176,7 @@ bool NNUE::load(const std::string &path) {
 bool NNUE::is_loaded() { return network != nullptr; }
 
 int NNUE::evaluate(const Position &pos) {
-  Accumulator &accumulator = pos.accumulator();
+  Accumulator &accumulator = pos.accumulators().current();
   if (accumulator.generation != network_generation) refresh(pos, accumulator);
 
   const int16_t *ours = accumulator.values[pos.to_move];

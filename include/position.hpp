@@ -53,25 +53,13 @@ public:
     return (occupancy[color] & ~pieces(color, PAWN) & ~pieces(color, KING)) != 0;
   }
 
-  NNUE::Accumulator &accumulator() const { return accumulator_slot.value; }
+  NNUE::AccumulatorStack &accumulators() const { return accumulator_stack; }
 
 private:
   static const std::array<CastlingRights, 64> CASTLING_MASKS;
   static constexpr std::array<CastlingRights, 64> init_castling_masks();
 
-  // NOTE: a copy never wants the accumulator, so it starts out unbuilt
-  struct AccumulatorSlot {
-    NNUE::Accumulator value{};
-
-    AccumulatorSlot() = default;
-    AccumulatorSlot(const AccumulatorSlot &) {}
-    AccumulatorSlot &operator=(const AccumulatorSlot &) {
-      value.generation = 0;
-      return *this;
-    }
-  };
-
-  mutable AccumulatorSlot accumulator_slot{};
+  mutable NNUE::AccumulatorStack accumulator_stack{};
 
   std::vector<UndoInfo> undo_stack{};
   uint64_t bitboards[12]{};

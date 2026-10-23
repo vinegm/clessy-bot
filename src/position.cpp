@@ -21,8 +21,8 @@ void Position::set_fen(const std::string &fen) {
   undo_stack.clear();
   hash = 0;
 
-  // NOTE: the board is cleared without remove_piece, so the accumulator is stale
-  accumulator().generation = 0;
+  // NOTE: the board is rebuilt from nothing, so the accumulator is too
+  accumulator_stack.reset();
 
   std::istringstream fen_stream(fen);
   std::string piece_placement, active_color, castling, en_passant, halfmove_str, fullmove_str;
@@ -180,14 +180,17 @@ void Position::make_move(const Move &move) {
   Square captured_square = capture_square(move);
 
   Piece captured_piece_encoded = NO_PIECE;
+  if (move.is_capture()) captured_piece_encoded = lookup_table[captured_square];
+
+  push_undo_info(move, captured_piece_encoded, hash_before);
+  accumulator_stack.push(*this);
+
   if (move.is_capture()) {
-    captured_piece_encoded = lookup_table[captured_square];
     Color captured_color = decode_color(captured_piece_encoded);
     PieceType captured_type = decode_type(captured_piece_encoded);
     remove_piece(captured_color, captured_type, captured_square);
+    accumulator_stack.remove(captured_color, captured_type, captured_square);
   }
-
-  push_undo_info(move, captured_piece_encoded, hash_before);
 
   hash ^= Zobrist::castling_key(castling_rights);
   hash ^= Zobrist::en_passant_key(en_passant_square);
@@ -213,6 +216,8 @@ void Position::make_move(const Move &move) {
 
     remove_piece(rook_color, rook_type, rook_from);
     add_piece(rook_color, rook_type, rook_to);
+    accumulator_stack.remove(rook_color, rook_type, rook_from);
+    accumulator_stack.add(rook_color, rook_type, rook_to);
   }
 
   PieceType placed_type = piece_type;
@@ -220,6 +225,9 @@ void Position::make_move(const Move &move) {
 
   remove_piece(piece_color, piece_type, move.from());
   add_piece(piece_color, placed_type, move.to());
+  accumulator_stack.remove(piece_color, piece_type, move.from());
+  accumulator_stack.add(piece_color, placed_type, move.to());
+  accumulator_stack.advance();
 
   pass_turn();
 
@@ -229,6 +237,8 @@ void Position::make_move(const Move &move) {
 
 void Position::make_null_move() {
   push_undo_info(Move{}, NO_PIECE, hash);
+  accumulator_stack.push(*this);
+  accumulator_stack.advance();
 
   // NOTE: en passant doesn't survive the opponent passing
   hash ^= Zobrist::en_passant_key(en_passant_square);
@@ -243,6 +253,7 @@ void Position::undo_move() {
 
   UndoInfo undo_info = undo_stack.back();
   undo_stack.pop_back();
+  accumulator_stack.pop();
 
   // NOTE: a null move touched no piece
   if (undo_info.move.is_null()) {
@@ -346,7 +357,7 @@ void Position::update_castling_rights(const Move &move, Square captured_square) 
   }
 }
 
-// NOTE: the only places the board changes, so the accumulator follows every move
+// NOTE: board only, make_move tells the accumulator stack what changed
 void Position::add_piece(Color color, PieceType piece, Square square) {
   uint64_t square_bit = square_to_bit(square);
   bitboards[bitboard_index(color, piece)] |= square_bit;
@@ -356,9 +367,6 @@ void Position::add_piece(Color color, PieceType piece, Square square) {
   const Piece encoded = encode_piece(color, piece);
   lookup_table[square] = encoded;
   hash ^= Zobrist::piece_key(encoded, square);
-
-  NNUE::Accumulator &current = accumulator();
-  if (current.is_computed()) NNUE::add_feature(current, color, piece, square);
 }
 
 void Position::remove_piece(Color color, PieceType piece, Square square) {
@@ -369,9 +377,6 @@ void Position::remove_piece(Color color, PieceType piece, Square square) {
 
   hash ^= Zobrist::piece_key(encode_piece(color, piece), square);
   lookup_table[square] = NO_PIECE;
-
-  NNUE::Accumulator &current = accumulator();
-  if (current.is_computed()) NNUE::remove_feature(current, color, piece, square);
 }
 
 void Position::pass_turn() {
