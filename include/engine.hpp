@@ -30,7 +30,7 @@ public:
       const SearchInfoCallback &on_iteration = nullptr,
       SearchControl *control = nullptr
   ) {
-    return run_search(pos, limits, on_iteration, control);
+    return Search::run(pos, limits, on_iteration, control);
   }
 
   MoveList get_legal_moves() const;

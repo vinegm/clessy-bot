@@ -4,9 +4,9 @@
 #include "notation.hpp"
 
 std::string UciFormatter::score_to_uci(int score) {
-  if (!is_mate_score(score)) return "cp " + std::to_string(score);
+  if (!Search::is_mate_score(score)) return "cp " + std::to_string(score);
 
-  int mate_in = mate_distance_moves(score);
+  int mate_in = Search::mate_distance_moves(score);
   if (score < 0) mate_in = -mate_in;
 
   return "mate " + std::to_string(mate_in);
