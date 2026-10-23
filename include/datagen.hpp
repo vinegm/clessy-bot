@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 
-class ClessDatagen {
+class Datagen {
 public:
   int run(int argc, char **argv);
 

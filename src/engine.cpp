@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <vector>
 
-MoveList ClessEngine::get_legal_moves() const {
+MoveList Engine::get_legal_moves() const {
   if (legal_cache_valid) return legal_moves;
 
   legal_moves = MoveGenerator::generate_legal_moves(pos);
@@ -15,17 +15,17 @@ MoveList ClessEngine::get_legal_moves() const {
   return legal_moves;
 }
 
-void ClessEngine::make_move(const Move &move) {
+void Engine::make_move(const Move &move) {
   legal_cache_valid = false;
   pos.make_move(move);
 }
 
-void ClessEngine::undo_move() {
+void Engine::undo_move() {
   legal_cache_valid = false;
   pos.undo_move();
 }
 
-std::vector<std::pair<Move, uint64_t>> ClessEngine::perft_divide(int depth) {
+std::vector<std::pair<Move, uint64_t>> Engine::perft_divide(int depth) {
   std::vector<std::pair<Move, uint64_t>> results;
   if (depth == 0) return results;
 
@@ -38,7 +38,7 @@ std::vector<std::pair<Move, uint64_t>> ClessEngine::perft_divide(int depth) {
   return results;
 }
 
-uint64_t ClessEngine::perft(Position &position, int depth) {
+uint64_t Engine::perft(Position &position, int depth) {
   if (depth == 0) return 1;
 
   MoveList moves = MoveGenerator::generate_legal_moves(position);

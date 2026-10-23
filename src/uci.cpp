@@ -14,9 +14,9 @@
 #include <iostream>
 #include <sys/types.h>
 
-ClessUCI::~ClessUCI() { stop_search(); }
+Uci::~Uci() { stop_search(); }
 
-void ClessUCI::run() {
+void Uci::run() {
   std::string line;
 
   while (!quitting && std::getline(std::cin, line)) {
@@ -36,7 +36,7 @@ void ClessUCI::run() {
   stop_search();
 }
 
-void ClessUCI::call_command(const std::vector<std::string> &leading_tokens) {
+void Uci::call_command(const std::vector<std::string> &leading_tokens) {
   size_t start = 0;
   while (start < leading_tokens.size() && !UciParser::is_command(leading_tokens[start])) {
     start++;
@@ -70,7 +70,7 @@ void ClessUCI::call_command(const std::vector<std::string> &leading_tokens) {
   }
 }
 
-void ClessUCI::handle_uci() {
+void Uci::handle_uci() {
   Logger::respond("id name Clessy");
   Logger::respond("id author vinegm");
 
@@ -91,9 +91,9 @@ void ClessUCI::handle_uci() {
   Logger::respond("uciok");
 }
 
-void ClessUCI::handle_isready() { Logger::respond("readyok"); }
+void Uci::handle_isready() { Logger::respond("readyok"); }
 
-void ClessUCI::handle_debug(const std::vector<std::string> &tokens) {
+void Uci::handle_debug(const std::vector<std::string> &tokens) {
   if (tokens.size() > 1 && tokens[1] == "off") return Logger::set_level(Logger::Level::Info);
   if (tokens.size() > 1) return Logger::set_level(Logger::Level::Debug);
 
@@ -107,11 +107,11 @@ void ClessUCI::handle_debug(const std::vector<std::string> &tokens) {
   Logger::info("debug mode on");
 }
 
-void ClessUCI::handle_register() {
+void Uci::handle_register() {
   // NOTE: nothing is copy protected, so there is nothing to register
 }
 
-void ClessUCI::handle_setoption(const std::vector<std::string> &tokens) {
+void Uci::handle_setoption(const std::vector<std::string> &tokens) {
   std::string name;
   std::string value;
   if (!UciParser::parse_setoption(tokens, name, value)) return;
@@ -121,7 +121,7 @@ void ClessUCI::handle_setoption(const std::vector<std::string> &tokens) {
   apply_option(name, value);
 }
 
-void ClessUCI::handle_ucinewgame() {
+void Uci::handle_ucinewgame() {
   stop_search();
 
   engine.set_fen(INITIAL_POSITION_FEN);
@@ -129,7 +129,7 @@ void ClessUCI::handle_ucinewgame() {
   TranspositionTable::clear();
 }
 
-void ClessUCI::handle_position(const std::vector<std::string> &tokens) {
+void Uci::handle_position(const std::vector<std::string> &tokens) {
   if (tokens.size() < 2) return Logger::warn("position: requires at least one argument");
 
   stop_search();
@@ -157,7 +157,7 @@ void ClessUCI::handle_position(const std::vector<std::string> &tokens) {
   if (end < tokens.size() && tokens[end] == "moves") process_moves(tokens, end + 1);
 }
 
-void ClessUCI::handle_go(const std::vector<std::string> &tokens) {
+void Uci::handle_go(const std::vector<std::string> &tokens) {
   stop_search();
 
   if (tokens.size() > 1 && tokens[1] == "perft") return handle_perft(tokens);
@@ -181,7 +181,7 @@ void ClessUCI::handle_go(const std::vector<std::string> &tokens) {
   start_search(limits, ponder);
 }
 
-void ClessUCI::handle_perft(const std::vector<std::string> &tokens) {
+void Uci::handle_perft(const std::vector<std::string> &tokens) {
   if (tokens.size() < 3) return Logger::error("go perft: requires a depth argument");
 
   int depth = std::stoi(tokens[2]);
@@ -196,7 +196,7 @@ void ClessUCI::handle_perft(const std::vector<std::string> &tokens) {
   Logger::respond("\nNodes searched: ", total_nodes);
 }
 
-void ClessUCI::handle_stop() {
+void Uci::handle_stop() {
   {
     std::scoped_lock lock(search_mutex);
     control.stop.store(true, std::memory_order_relaxed);
@@ -206,7 +206,7 @@ void ClessUCI::handle_stop() {
   search_release.notify_all();
 }
 
-void ClessUCI::handle_ponderhit() {
+void Uci::handle_ponderhit() {
   {
     std::scoped_lock lock(search_mutex);
     control.pondering.store(false, std::memory_order_relaxed);
@@ -215,7 +215,7 @@ void ClessUCI::handle_ponderhit() {
   search_release.notify_all();
 }
 
-void ClessUCI::handle_d() {
+void Uci::handle_d() {
   stop_search();
 
   Piece squares[64];
@@ -244,7 +244,7 @@ void ClessUCI::handle_d() {
   Logger::respond("Legal moves (", legal_moves.count, "): ", Notation::moves_to_uci(legal_moves));
 }
 
-void ClessUCI::handle_nnue(const std::vector<std::string> &tokens) {
+void Uci::handle_nnue(const std::vector<std::string> &tokens) {
   if (tokens.size() < 2) return Logger::error("nnue: requires a file path");
 
   stop_search();
@@ -254,13 +254,13 @@ void ClessUCI::handle_nnue(const std::vector<std::string> &tokens) {
   Logger::respond("Network loaded: ", tokens[1]);
 }
 
-void ClessUCI::handle_eval() {
+void Uci::handle_eval() {
   stop_search();
 
   Logger::respond("Eval (stm, cp, ", Eval::source_name(), "): ", engine.evaluate());
 }
 
-void ClessUCI::apply_option(const std::string &name, const std::string &value) {
+void Uci::apply_option(const std::string &name, const std::string &value) {
   std::string key = name;
   std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c) {
     return std::tolower(c);
@@ -297,7 +297,7 @@ void ClessUCI::apply_option(const std::string &name, const std::string &value) {
   Logger::warn("unknown option: '", name, "'");
 }
 
-bool ClessUCI::load_network(const std::string &path) {
+bool Uci::load_network(const std::string &path) {
   if (!NNUE::load(path)) return false;
 
   // NOTE: stored scores came from the previous evaluation
@@ -305,7 +305,7 @@ bool ClessUCI::load_network(const std::string &path) {
   return true;
 }
 
-void ClessUCI::start_search(const SearchLimits &limits, bool ponder) {
+void Uci::start_search(const SearchLimits &limits, bool ponder) {
   // NOTE: assigning over a joinable thread calls std::terminate
   stop_search();
 
@@ -315,7 +315,7 @@ void ClessUCI::start_search(const SearchLimits &limits, bool ponder) {
   search_thread = std::thread([this, limits] { search_worker(limits); });
 }
 
-void ClessUCI::stop_search() {
+void Uci::stop_search() {
   if (!search_thread.joinable()) return;
 
   {
@@ -329,11 +329,11 @@ void ClessUCI::stop_search() {
   search_thread.join();
 }
 
-void ClessUCI::send_iteration_info(const SearchResult &result) {
+void Uci::send_iteration_info(const SearchResult &result) {
   Logger::respond(UciFormatter::format_info_line(result, multipv, TranspositionTable::hashfull()));
 }
 
-void ClessUCI::search_worker(const SearchLimits &limits) {
+void Uci::search_worker(const SearchLimits &limits) {
   bool was_pondering = control.pondering.load(std::memory_order_relaxed);
 
   SearchInfoCallback report = [this](const SearchResult &line) {
@@ -351,7 +351,7 @@ void ClessUCI::search_worker(const SearchLimits &limits) {
   Logger::respond(line);
 }
 
-void ClessUCI::await_release(bool was_pondering) {
+void Uci::await_release(bool was_pondering) {
   std::unique_lock<std::mutex> lock(search_mutex);
 
   search_release.wait(lock, [this, was_pondering] {
@@ -361,7 +361,7 @@ void ClessUCI::await_release(bool was_pondering) {
   });
 }
 
-bool ClessUCI::resolve_move(const std::string &uci, Move &move) const {
+bool Uci::resolve_move(const std::string &uci, Move &move) const {
   Move parsed;
   try {
     parsed = Notation::uci_to_move(uci);
@@ -381,7 +381,7 @@ bool ClessUCI::resolve_move(const std::string &uci, Move &move) const {
   return false;
 }
 
-void ClessUCI::resolve_searchmoves(
+void Uci::resolve_searchmoves(
     const std::vector<std::string> &uci_moves,
     SearchLimits &limits
 ) const {
@@ -396,7 +396,7 @@ void ClessUCI::resolve_searchmoves(
   }
 }
 
-void ClessUCI::process_moves(const std::vector<std::string> &tokens, size_t start_index) {
+void Uci::process_moves(const std::vector<std::string> &tokens, size_t start_index) {
   for (size_t i = start_index; i < tokens.size(); ++i) {
     Move move;
 
