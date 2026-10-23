@@ -65,14 +65,81 @@ MoveList MoveGenerator::generate_pseudo_legal_moves(const Position &position) {
 }
 
 MoveList MoveGenerator::generate_legal_captures(const Position &position) {
+  return generate_noisy(position, generate_masks(position));
+}
+
+// NOTE: captures, en passant and every promotion, which survives a captures only mask
+MoveList MoveGenerator::generate_noisy(const Position &position, const Masks &masks) {
   MoveList move_list;
-  const Masks masks = generate_masks(position);
 
   const uint64_t targets = position.occupancy[opposite_color(position.to_move)];
 
   move_list.count = generate_moves(position, move_list.moves, masks, targets);
 
   return filter_en_passant_legality(position, move_list);
+}
+
+MoveList MoveGenerator::generate_quiets(const Position &position, const Masks &masks) {
+  Move pseudo[MAX_POSSIBLE_LEGAL_MOVES];
+
+  const uint64_t targets = ~position.occupancy[ANY_COLOR];
+
+  int count = generate_moves(position, pseudo, masks, targets);
+  count += generate_castling_moves(position, pseudo + count, masks);
+
+  // NOTE: promotions and en passant slip through an empty squares mask, they are noisy
+  MoveList move_list;
+  for (int i = 0; i < count; i++) {
+    if (!pseudo[i].is_capture() && !pseudo[i].is_promotion()) move_list.add_move(pseudo[i]);
+  }
+
+  return move_list;
+}
+
+// NOTE: a move from the transposition table may belong to another position. Generates
+// only the moving piece's type aimed at the target, and looks for the move among them
+bool MoveGenerator::is_legal(const Position &position, const Masks &masks, const Move &move) {
+  const Piece piece = position.lookup_table[move.from()];
+  if (piece == NO_PIECE || decode_color(piece) != position.to_move) return false;
+
+  // NOTE: generate_moves stops after the king in double check, so must this
+  const PieceType type = decode_type(piece);
+  if (type != KING && count_bits(masks.checkers) > 1) return false;
+
+  Move candidates[MAX_POSSIBLE_LEGAL_MOVES];
+  const uint64_t target = square_to_bit(move.to());
+
+  int count = 0;
+  switch (type) {
+    case PAWN:
+      if (position.to_move == WHITE) {
+        count = generate_pawn_moves<WHITE>(position, candidates, masks, target);
+      } else {
+        count = generate_pawn_moves<BLACK>(position, candidates, masks, target);
+      }
+      break;
+    case KNIGHT: count = generate_piece_moves<KNIGHT>(position, candidates, masks, target); break;
+    case BISHOP: count = generate_piece_moves<BISHOP>(position, candidates, masks, target); break;
+    case ROOK: count = generate_piece_moves<ROOK>(position, candidates, masks, target); break;
+    case QUEEN: count = generate_piece_moves<QUEEN>(position, candidates, masks, target); break;
+    case KING:
+      count = generate_piece_moves<KING>(position, candidates, masks, target);
+      count += generate_castling_moves(position, candidates + count, masks);
+      break;
+    default: return false;
+  }
+
+  for (int i = 0; i < count; i++) {
+    if (candidates[i] != move) continue;
+
+    // NOTE: the masks make every move legal except en passant
+    if (!move.is_en_passant()) return true;
+
+    Position copy = position;
+    return is_legal_move(copy, move);
+  }
+
+  return false;
 }
 
 int MoveGenerator::generate_moves(

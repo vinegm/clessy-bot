@@ -10,12 +10,7 @@ class MoveGenerator {
 public:
   MoveGenerator() = delete;
 
-  static MoveList generate_legal_moves(const Position &position);
-  static MoveList generate_legal_captures(const Position &position);
-
-  static bool is_in_check(const Position &position, Color color);
-
-private:
+  // NOTE: one node's checks and pins, so staged generation computes them once
   struct Masks {
     uint64_t enemy_attacks = 0;
     uint64_t check_mask = 0;
@@ -25,6 +20,18 @@ private:
     uint64_t pin_rays[64] = {}; // NOTE: only set for squares in pinned_pieces
   };
 
+  static MoveList generate_legal_moves(const Position &position);
+  static MoveList generate_legal_captures(const Position &position);
+
+  // Staged generation: noisy and quiet split the legal moves between them
+  static Masks generate_masks(const Position &position);
+  static MoveList generate_noisy(const Position &position, const Masks &masks);
+  static MoveList generate_quiets(const Position &position, const Masks &masks);
+  static bool is_legal(const Position &position, const Masks &masks, const Move &move);
+
+  static bool is_in_check(const Position &position, Color color);
+
+private:
   static MoveList generate_pseudo_legal_moves(const Position &position);
 
   static uint64_t legal_targets(Square from, const Masks &masks);
@@ -56,7 +63,6 @@ private:
 
   static int generate_castling_moves(const Position &position, Move *moves, const Masks &masks);
 
-  static Masks generate_masks(const Position &position);
   static uint64_t attack_map(const Position &position, Color color, uint64_t occupancy);
   static void find_checkers(const Position &position, Square king_square, Masks &masks);
   static void find_pins(

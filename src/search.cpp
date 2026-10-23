@@ -241,13 +241,13 @@ private:
 
     const bool in_check = MoveGenerator::is_in_check(pos, pos.to_move);
 
-    MoveList moves = MoveGenerator::generate_legal_moves(pos);
-    if (moves.empty() && in_check) return -(Search::MATE_SCORE - ply);
-    if (moves.empty()) return 0;
+    MovePicker picker(*this, hash_move, ply);
 
     // Null move pruning
-    // NOTE: only with pieces left, a side down to pawns is where zugzwang lives
-    if (allow_null && !is_pv && !in_check && depth >= 3 && pos.has_non_pawn_material(pos.to_move)) {
+    // NOTE: only with pieces left, a side down to pawns is where zugzwang lives. A
+    // stalemated side has nothing to pass on, so it needs a legal move first
+    if (allow_null && !is_pv && !in_check && depth >= 3 && pos.has_non_pawn_material(pos.to_move)
+        && picker.has_move()) {
       const int reduction = 2 + depth / 6;
 
       pos.make_null_move();
@@ -261,14 +261,13 @@ private:
       if (score >= beta) return score;
     }
 
-    order_quiet_aware(moves, hash_move, ply);
-
     int original_alpha = alpha;
     int best = -Search::INFINITE_SCORE;
-    Move best_move = moves[0];
+    Move best_move{};
     int move_index = 0;
 
-    for (const Move &move : moves) {
+    Move move;
+    while (picker.next(move)) {
       pos.make_move(move);
       int score = search_move(move, depth, ply, alpha, beta, is_pv, in_check, move_index);
       pos.undo_move();
@@ -290,6 +289,9 @@ private:
         break;
       }
     }
+
+    if (move_index == 0 && in_check) return -(Search::MATE_SCORE - ply);
+    if (move_index == 0) return 0;
 
     TranspositionTable::Bound bound = TranspositionTable::UPPER;
     if (best > original_alpha) bound = TranspositionTable::EXACT;
@@ -405,11 +407,89 @@ private:
     }
   }
 
-  void order_quiet_aware(MoveList &moves, const Move &hash_move, int ply) {
-    sort_by_score(moves, [this, &hash_move, ply](const Move &move) {
-      return quiet_aware_score(move, hash_move, ply);
-    });
-  }
+  // NOTE: the hash move, then captures and promotions, then quiets, each stage generated
+  // only once the one before it ran out without a cutoff. Quiets are scored when their
+  // stage begins, so they see the history the earlier subtrees left behind
+  class MovePicker {
+  public:
+    MovePicker(Searcher &searcher, const Move &hash_move, int ply) :
+        searcher(searcher), pos(searcher.pos), masks(MoveGenerator::generate_masks(searcher.pos)),
+        hash_move(hash_move), ply(ply) {}
+
+    // NOTE: whether a move is left, without handing it out
+    bool has_move() {
+      while (true) {
+        if (index < moves.size()) {
+          if (stage != Stage::Hash && hash_given && moves[index] == hash_move) {
+            index++;
+            continue;
+          }
+
+          return true;
+        }
+
+        if (!next_stage()) return false;
+      }
+    }
+
+    bool next(Move &move) {
+      if (!has_move()) return false;
+
+      move = moves[index++];
+      return true;
+    }
+
+  private:
+    enum class Stage {
+      Start,
+      Hash,
+      Noisy,
+      Quiet,
+      Done
+    };
+
+    Searcher &searcher;
+    const Position &pos;
+    const MoveGenerator::Masks masks;
+    const Move hash_move;
+    const int ply;
+
+    Stage stage = Stage::Start;
+    MoveList moves;
+    int index = 0;
+    bool hash_given = false;
+
+    bool next_stage() {
+      index = 0;
+      moves.count = 0;
+
+      switch (stage) {
+        case Stage::Start:
+          stage = Stage::Hash;
+          hash_given = !hash_move.is_null() && MoveGenerator::is_legal(pos, masks, hash_move);
+          if (hash_given) moves.add_move(hash_move);
+          return true;
+
+        case Stage::Hash:
+          stage = Stage::Noisy;
+          moves = MoveGenerator::generate_noisy(pos, masks);
+          sort_by_score(moves, [this](const Move &move) {
+            return move_order_score(pos, move, hash_move);
+          });
+          return true;
+
+        case Stage::Noisy:
+          stage = Stage::Quiet;
+          moves = MoveGenerator::generate_quiets(pos, masks);
+          sort_by_score(moves, [this](const Move &move) {
+            return searcher.quiet_score(move, ply);
+          });
+          return true;
+
+        default: stage = Stage::Done; return false;
+      }
+    }
+  };
 
   // NOTE: scores each move once, a comparator rescores both sides of every comparison.
   // Insertion sort keeps equal scores in generation order, as stable_sort did, without
@@ -437,9 +517,7 @@ private:
     }
   }
 
-  int quiet_aware_score(const Move &move, const Move &hash_move, int ply) {
-    if (!is_quiet(move) || move == hash_move) return move_order_score(pos, move, hash_move);
-
+  int quiet_score(const Move &move, int ply) const {
     if (ply < Search::MAX_DEPTH) {
       if (move == killers[ply][0]) return KILLER_ORDER + 1;
       if (move == killers[ply][1]) return KILLER_ORDER;
