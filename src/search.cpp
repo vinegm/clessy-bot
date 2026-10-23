@@ -406,13 +406,35 @@ private:
   }
 
   void order_quiet_aware(MoveList &moves, const Move &hash_move, int ply) {
-    std::stable_sort(
-        moves.begin(),
-        moves.end(),
-        [this, &hash_move, ply](const Move &a, const Move &b) {
-          return quiet_aware_score(a, hash_move, ply) > quiet_aware_score(b, hash_move, ply);
-        }
-    );
+    sort_by_score(moves, [this, &hash_move, ply](const Move &move) {
+      return quiet_aware_score(move, hash_move, ply);
+    });
+  }
+
+  // NOTE: scores each move once, a comparator rescores both sides of every comparison.
+  // Insertion sort keeps equal scores in generation order, as stable_sort did, without
+  // the heap buffer stable_sort allocates at every node
+  template<typename Score>
+  static void sort_by_score(MoveList &moves, Score score) {
+    int scores[MAX_POSSIBLE_LEGAL_MOVES];
+    for (int i = 0; i < moves.size(); i++) {
+      scores[i] = score(moves[i]);
+    }
+
+    for (int i = 1; i < moves.size(); i++) {
+      const Move move = moves[i];
+      const int value = scores[i];
+
+      int j = i - 1;
+      while (j >= 0 && scores[j] < value) {
+        scores[j + 1] = scores[j];
+        moves[j + 1] = moves[j];
+        j--;
+      }
+
+      scores[j + 1] = value;
+      moves[j + 1] = move;
+    }
   }
 
   int quiet_aware_score(const Move &move, const Move &hash_move, int ply) {
@@ -477,13 +499,9 @@ private:
   static void order_moves(const Position &pos, MoveList &moves) {
     const Move no_hash_move{};
 
-    std::stable_sort(
-        moves.begin(),
-        moves.end(),
-        [&pos, &no_hash_move](const Move &a, const Move &b) {
-          return move_order_score(pos, a, no_hash_move) > move_order_score(pos, b, no_hash_move);
-        }
-    );
+    sort_by_score(moves, [&pos, &no_hash_move](const Move &move) {
+      return move_order_score(pos, move, no_hash_move);
+    });
   }
 
   // NOTE: mate scores are relative to the root while searching, but to the node in the table
