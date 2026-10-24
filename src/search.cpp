@@ -22,6 +22,20 @@ constexpr int KILLER_ORDER = 99000;
 
 constexpr int MAX_REDUCED_MOVES = 64;
 
+// NOTE: margins in centipawns per ply of depth left. Each prunes only off the principal
+// variation and out of check, where a static eval is a fair guess at the score
+constexpr int REVERSE_FUTILITY_DEPTH = 7;
+constexpr int REVERSE_FUTILITY_MARGIN = 80;
+constexpr int RAZOR_DEPTH = 2;
+constexpr int RAZOR_MARGIN = 300;
+constexpr int FUTILITY_DEPTH = 6;
+constexpr int FUTILITY_MARGIN = 100;
+constexpr int LATE_MOVE_PRUNING_DEPTH = 6;
+constexpr int SEE_PRUNING_DEPTH = 6;
+constexpr int SEE_QUIET_MARGIN = 60;
+constexpr int SEE_NOISY_MARGIN = 100;
+constexpr int IIR_DEPTH = 4;
+
 // NOTE: the king is worth nothing here, it can only ever be the last piece to capture
 constexpr int SEE_VALUE[7] = {0, 100, 320, 330, 500, 900, 0};
 
@@ -350,13 +364,38 @@ private:
       }
     }
 
+    const bool can_prune = !is_pv && !in_check;
+
+    int static_eval = 0;
+    if (!in_check) static_eval = Eval::evaluate(pos);
+
+    // Reverse futility pruning
+    // NOTE: so far above beta that a few plies of the opponent's play won't bring it back
+    if (can_prune && depth <= REVERSE_FUTILITY_DEPTH && !Search::is_mate_score(beta)
+        && static_eval - REVERSE_FUTILITY_MARGIN * depth >= beta) {
+      return static_eval;
+    }
+
+    // Razoring
+    // NOTE: so far below alpha that only a capture could help, which quiescence checks
+    if (can_prune && depth <= RAZOR_DEPTH && static_eval + RAZOR_MARGIN * depth <= alpha) {
+      const int score = quiescence(alpha, alpha + 1, ply);
+      if (stopped) return 0;
+      if (score <= alpha) return score;
+    }
+
+    // Internal iterative reduction
+    // NOTE: without a hash move ordering is a guess, so the node is searched shallower first
+    // and the next iteration finds the move it left in the table
+    if (hash_move.is_null() && depth >= IIR_DEPTH) depth--;
+
     MovePicker picker(*this, hash_move, ply);
 
     // Null move pruning
     // NOTE: only with pieces left, a side down to pawns is where zugzwang lives. A
     // stalemated side has nothing to pass on, so it needs a legal move first
-    if (allow_null && !is_pv && !in_check && depth >= 3 && pos.has_non_pawn_material(pos.to_move)
-        && picker.has_move()) {
+    if (allow_null && can_prune && depth >= 3 && static_eval >= beta
+        && pos.has_non_pawn_material(pos.to_move) && picker.has_move()) {
       const int reduction = 2 + depth / 6;
 
       pos.make_null_move();
@@ -374,9 +413,29 @@ private:
     int best = -Search::INFINITE_SCORE;
     Move best_move{};
     int move_index = 0;
+    int quiets_searched = 0;
 
     Move move;
     while (picker.next(move)) {
+      // NOTE: only once a move has been searched, so a node never ends up with none
+      if (can_prune && move_index > 0 && !Search::is_mate_score(best)) {
+        if (is_quiet(move) && prune_quiets(depth, static_eval, alpha, quiets_searched)) {
+          picker.skip_quiets();
+          continue;
+        }
+
+        if (depth <= SEE_PRUNING_DEPTH) {
+          int margin = -SEE_NOISY_MARGIN * depth;
+          if (is_quiet(move)) margin = -SEE_QUIET_MARGIN * depth;
+
+          if (!see_at_least(pos, move, margin)) continue;
+        }
+      }
+
+      if (is_quiet(move)) {
+        quiets_searched++;
+      }
+
       pos.make_move(move);
       int score = search_move(move, depth, ply, alpha, beta, is_pv, in_check, move_index);
       pos.undo_move();
@@ -409,6 +468,15 @@ private:
     TranspositionTable::store(pos.hash, best_move, score_to_table(best, ply), depth, bound);
 
     return best;
+  }
+
+  // Futility and late move pruning
+  // NOTE: quiets can't lift a hopeless static eval to alpha, and past a depth-scaled count
+  // the ones left are ordered too late to be likely cutoffs
+  static bool prune_quiets(int depth, int static_eval, int alpha, int quiets_searched) {
+    if (depth <= LATE_MOVE_PRUNING_DEPTH && quiets_searched >= 3 + depth * depth) return true;
+
+    return depth <= FUTILITY_DEPTH && static_eval + FUTILITY_MARGIN * (depth + 1) <= alpha;
   }
 
   Position &pos;
@@ -549,6 +617,12 @@ private:
       return true;
     }
 
+    // NOTE: drops the quiets still to come, the bad captures after them are still handed out
+    void skip_quiets() {
+      skipping_quiets = true;
+      if (stage == Stage::Quiet) index = moves.size();
+    }
+
   private:
     enum class Stage {
       Start,
@@ -570,6 +644,8 @@ private:
     MoveList bad_noisy;
     int index = 0;
     bool hash_given = false;
+    bool skipping_quiets = false;
+
     // NOTE: keeps the order the moves were sorted in, on both sides of the split
     void split_bad_noisy() {
       int kept = 0;
@@ -607,6 +683,8 @@ private:
 
         case Stage::Noisy:
           stage = Stage::Quiet;
+          if (skipping_quiets) return true;
+
           moves = MoveGenerator::generate_quiets(pos, masks);
           sort_by_score(moves, [this](const Move &move) {
             return searcher.quiet_score(move, ply);
