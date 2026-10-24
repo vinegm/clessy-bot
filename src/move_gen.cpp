@@ -46,7 +46,7 @@ uint64_t MoveGenerator::piece_attacks(Square from, const Position &position, con
     return Attacks::bishop_attacks(from, occupancy) | Attacks::rook_attacks(from, occupancy);
   }
 
-  return Attacks::king_attacks(from) & ~masks.enemy_attacks;
+  return Attacks::king_attacks(from);
 }
 
 MoveList MoveGenerator::generate_legal_moves(const Position &position) {
@@ -296,6 +296,7 @@ int MoveGenerator::generate_piece_moves(
     attacks &= ~our_occupancy & targets;
 
     if constexpr (PieceT != KING) attacks &= legal_targets(from, masks);
+    if constexpr (PieceT == KING) attacks = safe_king_squares(position, attacks);
 
     while (attacks) {
       const Square to = pop_lsb_square(attacks);
@@ -332,7 +333,8 @@ int MoveGenerator::generate_castling_moves(
     const uint64_t between_squares = middle_bb | destination_bb;
     const uint64_t king_path = king_bb | between_squares;
 
-    if (!(position.occupancy[ANY_COLOR] & between_squares) && !(masks.enemy_attacks & king_path)) {
+    if (!(position.occupancy[ANY_COLOR] & between_squares)
+        && safe_king_squares(position, king_path) == king_path) {
       *moves++ = {king_square, lsb_square(destination_bb), CASTLING};
     }
   }
@@ -347,7 +349,8 @@ int MoveGenerator::generate_castling_moves(
     const uint64_t between_squares = middle_bb | destination_bb | outer_bb;
     const uint64_t king_path = king_bb | middle_bb | destination_bb;
 
-    if (!(position.occupancy[ANY_COLOR] & between_squares) && !(masks.enemy_attacks & king_path)) {
+    if (!(position.occupancy[ANY_COLOR] & between_squares)
+        && safe_king_squares(position, king_path) == king_path) {
       *moves++ = {king_square, lsb_square(destination_bb), CASTLING};
     }
   }
@@ -361,10 +364,6 @@ MoveGenerator::Masks MoveGenerator::generate_masks(const Position &position) {
   const Square king_square = find_king(position, us);
 
   Masks masks;
-
-  // NOTE: otherwise the king could step back along a checking ray
-  const uint64_t occupancy_without_king = position.occupancy[ANY_COLOR] ^ position.pieces(us, KING);
-  masks.enemy_attacks = attack_map(position, them, occupancy_without_king);
 
   find_checkers(position, king_square, masks);
   if (count_bits(masks.checkers) >= 2) return masks;
@@ -390,37 +389,6 @@ MoveGenerator::Masks MoveGenerator::generate_masks(const Position &position) {
   );
 
   return masks;
-}
-
-uint64_t MoveGenerator::attack_map(const Position &position, Color color, uint64_t occupancy) {
-  uint64_t attacks = 0;
-
-  uint64_t pawns = position.pieces(color, PAWN);
-  while (pawns) {
-    attacks |= Attacks::pawn_attacks(color, pop_lsb_square(pawns));
-  }
-
-  uint64_t knights = position.pieces(color, KNIGHT);
-  while (knights) {
-    attacks |= Attacks::knight_attacks(pop_lsb_square(knights));
-  }
-
-  uint64_t queens = position.pieces(color, QUEEN);
-
-  uint64_t diagonal_sliders = position.pieces(color, BISHOP) | queens;
-  while (diagonal_sliders) {
-    attacks |= Attacks::bishop_attacks(pop_lsb_square(diagonal_sliders), occupancy);
-  }
-
-  uint64_t straight_sliders = position.pieces(color, ROOK) | queens;
-  while (straight_sliders) {
-    attacks |= Attacks::rook_attacks(pop_lsb_square(straight_sliders), occupancy);
-  }
-
-  const uint64_t king = position.pieces(color, KING);
-  if (king) attacks |= Attacks::king_attacks(lsb_square(king));
-
-  return attacks;
 }
 
 void MoveGenerator::find_checkers(const Position &position, Square king_square, Masks &masks) {
@@ -492,8 +460,36 @@ void MoveGenerator::find_pins(
   }
 }
 
+// NOTE: the king only ever asks about the few squares it could step to, so it checks
+// those instead of every node building the whole enemy attack map
+uint64_t MoveGenerator::safe_king_squares(const Position &position, uint64_t squares) {
+  const Color us = position.to_move;
+  const Color them = opposite_color(us);
+
+  // NOTE: otherwise the king could step back along a checking ray
+  const uint64_t occupancy_without_king = position.occupancy[ANY_COLOR] ^ position.pieces(us, KING);
+
+  uint64_t safe = 0;
+  while (squares) {
+    const Square square = pop_lsb_square(squares);
+    if (!is_square_attacked(position, square, them, occupancy_without_king)) {
+      safe |= square_to_bit(square);
+    }
+  }
+
+  return safe;
+}
+
 bool MoveGenerator::is_square_attacked(const Position &position, Square square, Color enemy_color) {
-  const uint64_t all_pieces = position.occupancy[ANY_COLOR];
+  return is_square_attacked(position, square, enemy_color, position.occupancy[ANY_COLOR]);
+}
+
+bool MoveGenerator::is_square_attacked(
+    const Position &position,
+    Square square,
+    Color enemy_color,
+    uint64_t all_pieces
+) {
 
   if (Attacks::pawn_attacks(opposite_color(enemy_color), square)
       & position.pieces(enemy_color, PAWN)) {

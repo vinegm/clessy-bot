@@ -12,7 +12,6 @@ public:
 
   // NOTE: one node's checks and pins, so staged generation computes them once
   struct Masks {
-    uint64_t enemy_attacks = 0;
     uint64_t check_mask = 0;
     uint64_t checkers = 0;
 
@@ -63,7 +62,6 @@ private:
 
   static int generate_castling_moves(const Position &position, Move *moves, const Masks &masks);
 
-  static uint64_t attack_map(const Position &position, Color color, uint64_t occupancy);
   static void find_checkers(const Position &position, Square king_square, Masks &masks);
   static void find_pins(
       const Position &position,
@@ -75,5 +73,12 @@ private:
 
   static bool is_legal_move(Position &position, const Move &move);
   static bool is_square_attacked(const Position &position, Square square, Color by_color);
+  static bool is_square_attacked(
+      const Position &position,
+      Square square,
+      Color by_color,
+      uint64_t occupancy
+  );
+  static uint64_t safe_king_squares(const Position &position, uint64_t squares);
   static Square find_king(const Position &position, Color color);
 };
