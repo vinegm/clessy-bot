@@ -40,6 +40,11 @@ FetchContent_MakeAvailable(cli11)
 add_executable(clessy ${SOURCES})
 target_include_directories(clessy PRIVATE ${PROJECT_SOURCE_DIR}/include)
 target_compile_options(clessy PRIVATE -O3 -march=native)
+
+option(CLESSY_PEXT "Use pext for slider attacks when the CPU has BMI2, see attacks.hpp" ON)
+if(NOT CLESSY_PEXT)
+  target_compile_definitions(clessy PRIVATE CLESSY_NO_PEXT)
+endif()
 target_link_libraries(clessy PRIVATE Threads::Threads CLI11::CLI11)
 
 # NOTE: inlining across translation units matters here, the hot path runs through

@@ -78,7 +78,7 @@ static uint64_t bishop_mask(int square) {
   return mask;
 }
 
-#ifndef __BMI2__
+#ifndef CLESSY_USE_PEXT
 static uint64_t rng_state = 0x98F4BC3A17E52D6FULL;
 
 static uint64_t next_rand() {
@@ -141,14 +141,14 @@ static void find_magic(MagicEntry &entry, uint64_t *table, int square, SlowAttac
     return;
   }
 }
-#endif // !__BMI2__
+#endif // !CLESSY_USE_PEXT
 
 static void
     init_magic(MagicEntry &entry, uint64_t mask, uint64_t *table, int square, SlowAttacks slow) {
   entry.mask = mask;
   entry.attacks = table;
 
-#ifdef __BMI2__
+#ifdef CLESSY_USE_PEXT
   uint64_t subset = mask;
   while (true) {
     entry.attacks[_pext_u64(subset, mask)] = slow(square, subset);

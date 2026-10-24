@@ -6,14 +6,19 @@
 #include <cassert>
 #include <cstdint>
 
-#ifdef __BMI2__
+// NOTE: CLESSY_NO_PEXT (cmake -DCLESSY_PEXT=OFF) falls back to magic multiplication on
+// a CPU that has BMI2 but a slow pext, Zen 1 and 2 microcode it. Measured on a Zen 2
+// it saved under 1%, as lookups wait on the tables more than on pext, and the magics
+// are searched at startup, about 0.5s, so it stays opt-in
+#if defined(__BMI2__) && !defined(CLESSY_NO_PEXT)
+#define CLESSY_USE_PEXT
 #include <immintrin.h>
 #endif
 
 // NOTE: uses magic bitboards to compute attacks for sliding pieces.
 struct MagicEntry {
   uint64_t mask;
-#ifndef __BMI2__
+#ifndef CLESSY_USE_PEXT
   uint64_t magic;
   int shift;
 #endif
@@ -58,7 +63,7 @@ private:
   static bool initialize() noexcept;
 
   static uint64_t lookup(const MagicEntry &magic, uint64_t occupancy) {
-#ifdef __BMI2__
+#ifdef CLESSY_USE_PEXT
     return magic.attacks[_pext_u64(occupancy, magic.mask)];
 #else
     return magic.attacks[((occupancy & magic.mask) * magic.magic) >> magic.shift];
