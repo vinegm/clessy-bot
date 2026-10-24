@@ -184,12 +184,22 @@ private:
   int quiescence(int alpha, int beta, int ply) {
     if (ply > seldepth) seldepth = ply;
     if (!count_node()) return 0;
+    if (ply >= Search::MAX_DEPTH) return Eval::evaluate(pos);
 
-    int best = Eval::evaluate(pos);
-    if (best >= beta) return best;
-    alpha = std::max(alpha, best);
+    // NOTE: standing pat in check would pretend the threat can be ignored, so every
+    // evasion is searched instead, and having none is mate
+    const bool in_check = MoveGenerator::is_in_check(pos, pos.to_move);
 
-    MoveList moves = MoveGenerator::generate_legal_captures(pos);
+    int best = -(Search::MATE_SCORE - ply);
+    if (!in_check) {
+      best = Eval::evaluate(pos);
+      if (best >= beta) return best;
+      alpha = std::max(alpha, best);
+    }
+
+    MoveList moves;
+    if (in_check) moves = MoveGenerator::generate_legal_moves(pos);
+    else moves = MoveGenerator::generate_legal_captures(pos);
     order_moves(pos, moves);
 
     for (const Move &move : moves) {
@@ -222,7 +232,14 @@ private:
 
     if (ply < Search::MAX_DEPTH) pv_length[ply] = 0;
 
-    if (depth == 0) return quiescence(alpha, beta, ply);
+    const bool in_check = MoveGenerator::is_in_check(pos, pos.to_move);
+
+    // NOTE: a side in check is searched a ply deeper, so a check at the horizon is
+    // answered by the full search rather than by quiescence
+    if (in_check) depth++;
+
+    if (depth <= 0) return quiescence(alpha, beta, ply);
+    if (ply >= Search::MAX_DEPTH) return Eval::evaluate(pos);
 
     if (!count_node()) return 0;
 
@@ -238,8 +255,6 @@ private:
         return score_from_table(entry->score, ply);
       }
     }
-
-    const bool in_check = MoveGenerator::is_in_check(pos, pos.to_move);
 
     MovePicker picker(*this, hash_move, ply);
 
