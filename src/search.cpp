@@ -1,5 +1,6 @@
 #include "search.hpp"
 
+#include "attacks.hpp"
 #include "eval.hpp"
 #include "move_gen.hpp"
 #include "position.hpp"
@@ -20,6 +21,96 @@ constexpr int CAPTURE_ORDER = 100000;
 constexpr int KILLER_ORDER = 99000;
 
 constexpr int MAX_REDUCED_MOVES = 64;
+
+// NOTE: the king is worth nothing here, it can only ever be the last piece to capture
+constexpr int SEE_VALUE[7] = {0, 100, 320, 330, 500, 900, 0};
+
+// NOTE: both colours, bishops and rooks both include the queens
+static uint64_t attackers_to(
+    const Position &pos,
+    Square square,
+    uint64_t occupancy,
+    uint64_t bishops,
+    uint64_t rooks
+) {
+  return (Attacks::pawn_attacks(BLACK, square) & pos.pieces(WHITE, PAWN))
+         | (Attacks::pawn_attacks(WHITE, square) & pos.pieces(BLACK, PAWN))
+         | (Attacks::knight_attacks(square)
+            & (pos.pieces(WHITE, KNIGHT) | pos.pieces(BLACK, KNIGHT)))
+         | (Attacks::king_attacks(square) & (pos.pieces(WHITE, KING) | pos.pieces(BLACK, KING)))
+         | (Attacks::bishop_attacks(square, occupancy) & bishops)
+         | (Attacks::rook_attacks(square, occupancy) & rooks);
+}
+
+// NOTE: static exchange evaluation, whether trading off everything that attacks the target
+// square leaves the mover at least threshold up. Each side captures with its least valuable
+// piece and may stop when that is better. Pins are ignored, as is usual, for speed
+static bool see_at_least(const Position &pos, const Move &move, int threshold) {
+  if (move.is_castling()) return threshold <= 0;
+
+  const Square from = move.from();
+  const Square to = move.to();
+
+  int balance = -threshold;
+  if (move.is_en_passant()) balance += SEE_VALUE[PAWN];
+  else if (move.is_capture()) balance += SEE_VALUE[decode_type(pos.lookup_table[to])];
+
+  PieceType victim = decode_type(pos.lookup_table[from]);
+  if (move.is_promotion()) {
+    victim = move.promotion_piece();
+    balance += SEE_VALUE[victim] - SEE_VALUE[PAWN];
+  }
+
+  if (balance < 0) return false;
+
+  balance -= SEE_VALUE[victim];
+  if (balance >= 0) return true;
+
+  uint64_t occupancy = (pos.occupancy[ANY_COLOR] ^ (1ULL << from)) | (1ULL << to);
+  if (move.is_en_passant()) {
+    occupancy ^= 1ULL << indexes_to_square(square_rank(from), square_file(to));
+  }
+
+  const uint64_t bishops = pos.pieces(WHITE, BISHOP) | pos.pieces(BLACK, BISHOP)
+                           | pos.pieces(WHITE, QUEEN) | pos.pieces(BLACK, QUEEN);
+  const uint64_t rooks = pos.pieces(WHITE, ROOK) | pos.pieces(BLACK, ROOK)
+                         | pos.pieces(WHITE, QUEEN) | pos.pieces(BLACK, QUEEN);
+
+  uint64_t attackers = attackers_to(pos, to, occupancy, bishops, rooks) & occupancy;
+  Color side = opposite_color(pos.to_move);
+
+  while (true) {
+    const uint64_t ours = attackers & pos.occupancy[side];
+    if (ours == 0) break;
+
+    PieceType attacker = PAWN;
+    while (attacker < KING && (ours & pos.pieces(side, attacker)) == 0) {
+      attacker = PieceType(attacker + 1);
+    }
+
+    occupancy ^= 1ULL << lsb_square(ours & pos.pieces(side, attacker));
+
+    // NOTE: whatever stood behind the capturing piece joins in
+    if (attacker == PAWN || attacker == BISHOP || attacker == QUEEN) {
+      attackers |= Attacks::bishop_attacks(to, occupancy) & bishops;
+    }
+    if (attacker == ROOK || attacker == QUEEN) {
+      attackers |= Attacks::rook_attacks(to, occupancy) & rooks;
+    }
+    attackers &= occupancy;
+
+    side = opposite_color(side);
+    balance = -balance - 1 - SEE_VALUE[attacker];
+
+    if (balance >= 0) {
+      // NOTE: the king can't take into a square that is still defended
+      if (attacker == KING && (attackers & pos.occupancy[side]) != 0) side = opposite_color(side);
+      break;
+    }
+  }
+
+  return side != pos.to_move;
+}
 
 struct LateMoveReductions {
   int values[Search::MAX_DEPTH + 1][MAX_REDUCED_MOVES]{};
@@ -203,6 +294,9 @@ private:
     order_moves(pos, moves);
 
     for (const Move &move : moves) {
+      // NOTE: a capture that loses material can't raise a stand pat score
+      if (!in_check && !see_at_least(pos, move, 0)) continue;
+
       pos.make_move(move);
       int score = -quiescence(-beta, -alpha, ply + 1);
       pos.undo_move();
@@ -422,9 +516,10 @@ private:
     }
   }
 
-  // NOTE: the hash move, then captures and promotions, then quiets, each stage generated
-  // only once the one before it ran out without a cutoff. Quiets are scored when their
-  // stage begins, so they see the history the earlier subtrees left behind
+  // NOTE: the hash move, then captures and promotions, then quiets, then the captures that
+  // lose material, each stage generated only once the one before it ran out without a
+  // cutoff. Quiets are scored when their stage begins, so they see the history the earlier
+  // subtrees left behind
   class MovePicker {
   public:
     MovePicker(Searcher &searcher, const Move &hash_move, int ply) :
@@ -460,6 +555,7 @@ private:
       Hash,
       Noisy,
       Quiet,
+      BadNoisy,
       Done
     };
 
@@ -471,8 +567,23 @@ private:
 
     Stage stage = Stage::Start;
     MoveList moves;
+    MoveList bad_noisy;
     int index = 0;
     bool hash_given = false;
+    // NOTE: keeps the order the moves were sorted in, on both sides of the split
+    void split_bad_noisy() {
+      int kept = 0;
+      for (const Move move : moves) {
+        if (move.is_capture() && !move.is_promotion() && !see_at_least(pos, move, 0)) {
+          bad_noisy.add_move(move);
+          continue;
+        }
+
+        moves[kept++] = move;
+      }
+
+      moves.count = kept;
+    }
 
     bool next_stage() {
       index = 0;
@@ -491,6 +602,7 @@ private:
           sort_by_score(moves, [this](const Move &move) {
             return move_order_score(pos, move, hash_move);
           });
+          split_bad_noisy();
           return true;
 
         case Stage::Noisy:
@@ -499,6 +611,11 @@ private:
           sort_by_score(moves, [this](const Move &move) {
             return searcher.quiet_score(move, ply);
           });
+          return true;
+
+        case Stage::Quiet:
+          stage = Stage::BadNoisy;
+          moves = bad_noisy;
           return true;
 
         default: stage = Stage::Done; return false;
