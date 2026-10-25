@@ -22,6 +22,14 @@ constexpr int KILLER_ORDER = 99000;
 
 constexpr int MAX_REDUCED_MOVES = 64;
 
+// NOTE: soft limit scales, indexed by how many iterations in a row kept the best move
+constexpr int STABILITY_STEPS = 5;
+constexpr double STABILITY_SCALE[STABILITY_STEPS] = {1.6, 1.2, 1.0, 0.85, 0.7};
+constexpr int SCORE_DROP_CP = 30;
+constexpr double SCORE_DROP_SCALE = 1.3;
+constexpr int64_t SUDDEN_DEATH_MOVES = 30;
+constexpr int64_t HARD_LIMIT_SCALE = 4;
+
 // NOTE: margins in centipawns per ply of depth left. Each prunes only off the principal
 // variation and out of check, where a static eval is a fair guess at the score
 constexpr int REVERSE_FUTILITY_DEPTH = 7;
@@ -146,11 +154,11 @@ public:
   Searcher(Position &pos, const SearchLimits &limits, SearchControl *control) :
       pos(pos), limits(limits), control(control), start(Clock::now()) {
     if (!limits.infinite) node_limit = limits.nodes;
-    if (!limits.infinite && limits.has_clock()) budget_ms = time_budget_ms(limits, pos.to_move);
+    if (!limits.infinite && limits.has_clock()) budget = time_budget(limits, pos.to_move);
 
-    has_deadline = budget_ms >= 0;
+    has_deadline = budget.hard_ms >= 0;
     deadline = start;
-    if (has_deadline) deadline += std::chrono::milliseconds(budget_ms);
+    if (has_deadline) deadline += std::chrono::milliseconds(budget.hard_ms);
 
     // NOTE: a ponder search only arms its deadline on ponderhit
     ponder_active = control != nullptr && control->pondering.load(std::memory_order_relaxed);
@@ -170,18 +178,24 @@ public:
     order_moves(pos, root_moves);
 
     const int lines = std::clamp(limits.multipv, 1, root_moves.count);
+    int stable_iterations = 0;
 
     for (int depth = 1; depth <= max_depth(limits); depth++) {
       std::vector<SearchResult> iteration = iterate(depth, lines, root_moves);
       if (stopped || iteration.empty()) break;
 
+      const SearchResult previous = result;
       result = iteration.front();
       report(iteration, on_iteration);
       rotate_best_lines(root_moves, iteration);
 
+      if (depth > 1 && result.best_move == previous.best_move) stable_iterations++;
+      else stable_iterations = 0;
+
       if (limits.infinite) continue;
       if (Search::is_mate_score(result.score)) break;
       if (out_of_budget()) break;
+      if (depth > 1 && past_soft_limit(stable_iterations, previous.score - result.score)) break;
     }
 
     result.nodes = nodes;
@@ -284,6 +298,21 @@ private:
     if (node_limit >= 0 && nodes >= static_cast<uint64_t>(node_limit)) return true;
 
     return has_deadline && !ponder_active && Clock::now() >= deadline;
+  }
+
+  // NOTE: checked between iterations. A best move that keeps surviving deeper searches
+  // needs less time, a score that fell needs more to find the way out
+  bool past_soft_limit(int stable_iterations, int score_drop) const {
+    if (budget.soft_ms < 0 || ponder_active) return false;
+
+    double scale = STABILITY_SCALE[std::min(stable_iterations, STABILITY_STEPS - 1)];
+    if (score_drop >= SCORE_DROP_CP) scale *= SCORE_DROP_SCALE;
+
+    // NOTE: from the start of the search, so time spent pondering counts towards it
+    const auto elapsed =
+        std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - start).count();
+
+    return static_cast<double>(elapsed) >= static_cast<double>(budget.soft_ms) * scale;
   }
 
   int quiescence(int alpha, int beta, int ply) {
@@ -485,8 +514,15 @@ private:
   Clock::time_point start;
   int64_t node_limit = -1;
 
+  // NOTE: soft is what a move should take and is only checked between iterations, hard is
+  // where a running iteration is abandoned
+  struct TimeBudget {
+    int64_t soft_ms = -1;
+    int64_t hard_ms = -1;
+  };
+
   Clock::time_point deadline;
-  int64_t budget_ms = -1;
+  TimeBudget budget;
   bool has_deadline = false;
   bool ponder_active = false;
 
@@ -753,7 +789,7 @@ private:
       if (control && control->pondering.load(std::memory_order_relaxed)) return true;
 
       ponder_active = false;
-      if (has_deadline) deadline = Clock::now() + std::chrono::milliseconds(budget_ms);
+      if (has_deadline) deadline = Clock::now() + std::chrono::milliseconds(budget.hard_ms);
     }
 
     if (node_limit >= 0 && nodes >= static_cast<uint64_t>(node_limit)) {
@@ -807,10 +843,13 @@ private:
     return score - ply;
   }
 
-  static int64_t time_budget_ms(const SearchLimits &limits, Color side_to_move) {
+  static TimeBudget time_budget(const SearchLimits &limits, Color side_to_move) {
     int64_t overhead = std::max<int64_t>(limits.move_overhead, 0);
 
-    if (limits.movetime >= 0) return std::max<int64_t>(limits.movetime - overhead, 1);
+    if (limits.movetime >= 0) {
+      const int64_t budget = std::max<int64_t>(limits.movetime - overhead, 1);
+      return {budget, budget};
+    }
 
     int64_t time = limits.wtime;
     int64_t increment = limits.winc;
@@ -819,14 +858,21 @@ private:
       increment = limits.binc;
     }
 
-    if (time < 0) return -1;
+    if (time < 0) return {};
 
-    // NOTE: without movestogo assume about 20 moves are left
-    int64_t moves_left = 20;
-    if (limits.movestogo > 0) moves_left = limits.movestogo;
+    // NOTE: without movestogo the game is assumed to go on, so the clock is spread thin
+    int64_t moves_left = SUDDEN_DEATH_MOVES;
+    if (limits.movestogo > 0) moves_left = std::min<int64_t>(limits.movestogo + 1, moves_left);
 
-    int64_t budget = time / moves_left + increment / 2 - overhead;
-    return std::clamp<int64_t>(budget, 1, std::max<int64_t>(time - overhead, 1));
+    const int64_t usable = std::max<int64_t>(time - overhead, 1);
+
+    const int64_t soft = time / moves_left + increment * 3 / 4;
+    const int64_t hard = std::min(soft * HARD_LIMIT_SCALE, time / 2);
+
+    return {
+        std::clamp<int64_t>(soft - overhead, 1, usable),
+        std::clamp<int64_t>(hard - overhead, 1, usable),
+    };
   }
 
   static MoveList
