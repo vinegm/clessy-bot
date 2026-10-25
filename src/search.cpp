@@ -22,6 +22,9 @@ constexpr int KILLER_ORDER = 99000;
 
 constexpr int MAX_REDUCED_MOVES = 64;
 
+constexpr int ASPIRATION_DEPTH = 5;
+constexpr int ASPIRATION_WINDOW = 25;
+
 // NOTE: soft limit scales, indexed by how many iterations in a row kept the best move
 constexpr int STABILITY_STEPS = 5;
 constexpr double STABILITY_SCALE[STABILITY_STEPS] = {1.6, 1.2, 1.0, 0.85, 0.7};
@@ -192,10 +195,13 @@ public:
 
     const int lines = std::clamp(limits.multipv, 1, root_moves.count);
     int stable_iterations = 0;
+    std::vector<SearchResult> last_iteration;
 
     for (int depth = 1; depth <= max_depth(limits); depth++) {
-      std::vector<SearchResult> iteration = iterate(depth, lines, root_moves);
+      std::vector<SearchResult> iteration = iterate(depth, lines, root_moves, last_iteration);
       if (stopped || iteration.empty()) break;
+
+      last_iteration = iteration;
 
       const SearchResult previous = result;
       result = iteration.front();
@@ -217,7 +223,12 @@ public:
   }
 
 private:
-  std::vector<SearchResult> iterate(int depth, int lines, const MoveList &root_moves) {
+  std::vector<SearchResult> iterate(
+      int depth,
+      int lines,
+      const MoveList &root_moves,
+      const std::vector<SearchResult> &previous
+  ) {
     // NOTE: depth 1 always finishes, so a best move always exists
     time_checks_enabled = depth > 1;
     seldepth = 0;
@@ -226,7 +237,14 @@ private:
     std::vector<Move> claimed;
 
     for (int line = 0; line < lines; line++) {
-      std::optional<SearchResult> current = search_line(depth, line, root_moves, claimed);
+      std::optional<SearchResult> current;
+      if (line < static_cast<int>(previous.size())) {
+        current = search_aspirated(depth, line, root_moves, claimed, previous[line].score);
+      } else {
+        current = search_line(
+            depth, line, root_moves, claimed, -Search::INFINITE_SCORE, Search::INFINITE_SCORE
+        );
+      }
       if (!current.has_value()) break;
 
       claimed.push_back(current->best_move);
@@ -236,18 +254,61 @@ private:
     return iteration;
   }
 
+  // NOTE: the score rarely moves far between iterations, so a narrow window around the last
+  // one cuts more. A score outside it is only a bound, so the window widens and that line is
+  // searched again
+  std::optional<SearchResult> search_aspirated(
+      int depth,
+      int line,
+      const MoveList &root_moves,
+      const std::vector<Move> &claimed,
+      int previous_score
+  ) {
+    int alpha = -Search::INFINITE_SCORE;
+    int beta = Search::INFINITE_SCORE;
+    int window = ASPIRATION_WINDOW;
+
+    if (depth >= ASPIRATION_DEPTH && !Search::is_mate_score(previous_score)) {
+      alpha = std::max(previous_score - window, -Search::INFINITE_SCORE);
+      beta = std::min(previous_score + window, Search::INFINITE_SCORE);
+    }
+
+    while (true) {
+      std::optional<SearchResult> current =
+          search_line(depth, line, root_moves, claimed, alpha, beta);
+      if (!current.has_value()) return std::nullopt;
+
+      window *= 2;
+
+      if (current->score <= alpha && alpha > -Search::INFINITE_SCORE) {
+        // NOTE: beta comes down too, a falling score is rarely about to climb back
+        beta = (alpha + beta) / 2;
+        alpha = std::max(current->score - window, -Search::INFINITE_SCORE);
+        continue;
+      }
+
+      if (current->score >= beta && beta < Search::INFINITE_SCORE) {
+        beta = std::min(current->score + window, Search::INFINITE_SCORE);
+        continue;
+      }
+
+      return current;
+    }
+  }
+
   // NOTE: one MultiPV line, the best move that an earlier line didn't claim
   std::optional<SearchResult> search_line(
       int depth,
       int line,
       const MoveList &root_moves,
-      const std::vector<Move> &claimed
+      const std::vector<Move> &claimed,
+      int alpha,
+      int beta
   ) {
     SearchResult current;
     current.depth = depth;
     current.multipv = line + 1;
 
-    int alpha = -Search::INFINITE_SCORE;
     bool has_move = false;
 
     for (const Move &move : root_moves) {
@@ -257,8 +318,7 @@ private:
 
       int score = 0;
       if (has_move) score = -negamax(depth - 1, 1, -alpha - 1, -alpha);
-      if (!has_move || score > alpha)
-        score = -negamax(depth - 1, 1, -Search::INFINITE_SCORE, -alpha);
+      if (!has_move || (score > alpha && score < beta)) score = -negamax(depth - 1, 1, -beta, -alpha);
 
       pos.undo_move();
       if (stopped) break;
@@ -272,6 +332,8 @@ private:
       current.best_move = move;
       current.pv.assign(1, move);
       append_pv(current.pv, 1);
+
+      if (score >= beta) break;
     }
 
     if (stopped || !has_move) return std::nullopt;
