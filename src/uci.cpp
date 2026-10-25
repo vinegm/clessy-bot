@@ -5,6 +5,7 @@
 #include "logger.hpp"
 #include "nnue.hpp"
 #include "notation.hpp"
+#include "search.hpp"
 #include "transposition_table.hpp"
 #include "uci_formatter.hpp"
 #include "uci_parser.hpp"
@@ -127,6 +128,7 @@ void Uci::handle_ucinewgame() {
   engine.set_fen(INITIAL_POSITION_FEN);
 
   TranspositionTable::clear();
+  Search::clear();
 }
 
 void Uci::handle_position(const std::vector<std::string> &tokens) {

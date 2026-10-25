@@ -149,6 +149,12 @@ struct LateMoveReductions {
 
 static const LateMoveReductions LATE_MOVE_REDUCTIONS;
 
+// NOTE: kept across searches, the quiets that refuted the last move mostly refute this one
+// too. Bounded by HISTORY_MAX so it never outranks killers or captures
+constexpr int HISTORY_MAX = 16384;
+constexpr int HISTORY_LMR_DIVISOR = 8192;
+static int history[2][64][64]{}; // [Color][from][to]
+
 class Searcher {
 public:
   Searcher(Position &pos, const SearchLimits &limits, SearchControl *control) :
@@ -166,6 +172,13 @@ public:
 
   SearchResult run(const SearchInfoCallback &on_iteration) {
     TranspositionTable::new_search();
+
+    // NOTE: halved rather than cleared, so the last search still guides this one
+    for (auto &by_from : history) {
+      for (auto &by_to : by_from) {
+        for (int &score : by_to) score /= 2;
+      }
+    }
 
     MoveList root_moves =
         restrict_root_moves(MoveGenerator::generate_legal_moves(pos), limits.searchmoves);
@@ -443,6 +456,7 @@ private:
     Move best_move{};
     int move_index = 0;
     int quiets_searched = 0;
+    MoveList quiets_tried;
 
     Move move;
     while (picker.next(move)) {
@@ -463,6 +477,7 @@ private:
 
       if (is_quiet(move)) {
         quiets_searched++;
+        quiets_tried.add_move(move);
       }
 
       pos.make_move(move);
@@ -482,7 +497,7 @@ private:
       }
 
       if (alpha >= beta) {
-        if (is_quiet(move)) record_cutoff(move, depth, ply);
+        if (is_quiet(move)) record_cutoff(move, depth, ply, quiets_tried);
         break;
       }
     }
@@ -527,7 +542,6 @@ private:
   bool ponder_active = false;
 
   Move killers[Search::MAX_DEPTH][2]{};
-  int history[2][64][64]{}; // [Color][from][to]
 
   // NOTE: row ply holds the best line from that ply down
   Move pv_table[Search::MAX_DEPTH][Search::MAX_DEPTH]{};
@@ -585,6 +599,9 @@ private:
                                                [std::min(move_index, MAX_REDUCED_MOVES - 1)];
 
     if (is_pv) reduction--;
+
+    // NOTE: the move is already made, so the history belongs to the side that just moved
+    reduction -= history[opposite_color(pos.to_move)][move.from()][move.to()] / HISTORY_LMR_DIVISOR;
     if (ply < Search::MAX_DEPTH && (move == killers[ply][0] || move == killers[ply][1])) {
       reduction--;
     }
@@ -607,12 +624,22 @@ private:
     pv_length[ply] = std::min(child_length + 1, Search::MAX_DEPTH);
   }
 
+  // NOTE: the gravity term shrinks the step as the score nears HISTORY_MAX, which bounds it
+  void update_history(const Move &move, int bonus) {
+    int &score = history[pos.to_move][move.from()][move.to()];
+    score += bonus - score * std::abs(bonus) / HISTORY_MAX;
+  }
+
   static bool is_quiet(const Move &move) { return !move.is_capture() && !move.is_promotion(); }
 
-  void record_cutoff(const Move &move, int depth, int ply) {
-    // NOTE: capped so history never outranks killers or captures
-    int &score = history[pos.to_move][move.from()][move.to()];
-    score = std::min(score + depth * depth, KILLER_ORDER - 1);
+  // NOTE: the quiets tried before the cutoff failed here, so they lose what it gains
+  void record_cutoff(const Move &move, int depth, int ply, const MoveList &quiets_tried) {
+    const int bonus = std::min(depth * depth, HISTORY_MAX / 4);
+
+    for (const Move &tried : quiets_tried) {
+      if (tried == move) update_history(tried, bonus);
+      else update_history(tried, -bonus);
+    }
 
     if (ply < Search::MAX_DEPTH && move != killers[ply][0]) {
       killers[ply][1] = killers[ply][0];
@@ -900,6 +927,14 @@ private:
     return depth;
   }
 };
+
+void Search::clear() {
+  for (auto &by_from : history) {
+    for (auto &by_to : by_from) {
+      for (int &score : by_to) score = 0;
+    }
+  }
+}
 
 SearchResult Search::run(
     Position &pos,

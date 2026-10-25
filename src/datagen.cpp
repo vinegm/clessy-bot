@@ -4,6 +4,7 @@
 #include "logger.hpp"
 #include "move_gen.hpp"
 #include "nnue.hpp"
+#include "search.hpp"
 #include "transposition_table.hpp"
 
 #include <algorithm>
@@ -305,6 +306,7 @@ int Datagen::run(int argc, char **argv) {
 
   for (int64_t game = 0; game < options.games; game++) {
     TranspositionTable::clear();
+    Search::clear();
 
     bool opened = false;
     for (int attempt = 0; attempt < OPENING_ATTEMPTS && !opened; attempt++) {

@@ -31,6 +31,9 @@ public:
           const SearchInfoCallback &on_iteration = nullptr,
           SearchControl *control = nullptr);
 
+  // NOTE: forgets what move ordering learned, for a new game
+  static void clear();
+
   static constexpr bool is_mate_score(int score) {
     return score > MATE_SCORE - 1000 || score < -(MATE_SCORE - 1000);
   }
